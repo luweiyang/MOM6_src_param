@@ -417,8 +417,8 @@ subroutine initialize_regridding(CS, GV, max_depth, param_file, mod, coord_mode,
       call MOM_error(FATAL,trim(mod)//', initialize_regridding: '// &
                  'Mismatch in number of model levels and "'//trim(string)//'".')
     endif
-    if (main_parameters) call log_param(param_file, mod, "!"//coord_res_param, dz, &
-               trim(message), units=coordinateUnits(coord_mode))
+    !if (main_parameters) call log_param(param_file, mod, "!"//coord_res_param, dz, &
+    !           trim(message), units=coordinateUnits(coord_mode))
   elseif (index(trim(string),'FNC1:')==1) then
     ke = GV%ke; allocate(dz(ke))
     call dz_function1( trim(string(6:)), dz )

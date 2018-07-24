@@ -1306,7 +1306,7 @@ subroutine log_param_real_array(CS, modulename, varname, value, desc, &
   real,             optional, intent(in) :: default
 ! This subroutine writes the value of a real parameter to a log file,
 ! along with its name and the module it came from.
-  character(len=1320) :: mesg
+  character(len=6600) :: mesg
   character(len=240) :: myunits
 
  !write(mesg, '("  ",a," ",a,": ",ES19.12,99(",",ES19.12))') &

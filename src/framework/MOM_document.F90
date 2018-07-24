@@ -43,7 +43,7 @@ interface doc_param
                    doc_param_time
 end interface
 
-integer, parameter :: mLen = 1240 ! Length of interface/message strings
+integer, parameter :: mLen = 6200 ! Length of interface/message strings
 
 type, public :: doc_type ; private
   integer :: unitAll = -1           ! The open unit number for docFileBase + .all.

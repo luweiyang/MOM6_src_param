@@ -159,7 +159,7 @@ function left_reals(r,sep)
 ! Returns a character string of a comma-separated, compact formatted, reals
 ! e.g. "1., 2., 5*3., 5.E2"
   ! Arguments
-  character(len=1320) :: left_reals
+  character(len=6600) :: left_reals
   real, intent(in) :: r(:)
   character(len=*), optional :: sep
   ! Local variables
