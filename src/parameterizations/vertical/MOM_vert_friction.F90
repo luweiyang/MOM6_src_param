@@ -231,6 +231,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
 ! the wind stress is applied as a stress boundary condition.
     if (CS%direct_stress) then
+      print *,'**********DIRECT_STRESS part is working!**********'
       do I=Isq,Ieq ; if (do_i(I)) then
         surface_stress(I) = 0.0
         zDS = 0.0
@@ -239,6 +240,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
           h_a = 0.5 * (h(I,j,k) + h(I+1,j,k)) + h_neglect
           hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
           u(I,j,k) = u(I,j,k) + I_Hmix * hfr * stress
+          u(I,j,k) = u(I,j,k) + 0.5
           zDS = zDS + h_a ; if (zDS >= Hmix) exit
         enddo
       endif ; enddo ! end of i loop
