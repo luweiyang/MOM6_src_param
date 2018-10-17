@@ -416,7 +416,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       !decay_scale = 5.
       decay_depth = 500.
  
-      kh_small_scale = 1./2000. ! horizontal wavenumber of small-scale
+      kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
 !topography, in m-1.
       do I=Isq,Ieq ; if (do_i(I)) then
         
