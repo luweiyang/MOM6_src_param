@@ -134,7 +134,7 @@ type, public :: vertvisc_CS ; private
   integer :: id_Ray_u = -1, id_Ray_v = -1, id_taux_bot = -1, id_tauy_bot = -1
   integer :: id_lw_stress_u = -1, id_lw_stress_v = -1
   integer :: id_lw_body_force_u = -1, id_lw_body_force_v = -1
-  integer :: id_lw_epsilon = -1
+  integer :: id_lw_epsilon = -1, id_lw_TKE = -1
   !>@}
 
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL()
@@ -339,6 +339,9 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate total (u + v), a
 !scalar
 
+  real :: lw_TKE_u(SZIB_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component, in m3 s-3.
+  real :: lw_TKE(SZI_(G),SZJ_(G))        ! Bottom energy flux into lee waves total (u + v), a scalar. 
+
   real :: vert_structure_numer(SZK_(GV)) ! Numerator of the expression of 
 !vertical structure function
   real :: vert_structure_numer_sum       ! Sum of numerators, used to replace
@@ -439,6 +442,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         enddo
         
         lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
+        lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
 
         vert_structure_numer_sum = 0.0
 
@@ -595,6 +599,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         enddo
         
         lw_stress_v(i,J) = - 1e+3 * lw_drag_coeff * v(i,J,k_v-1)
+        lw_TKE(i,j) = lw_TKE_u(I,j) + v(I,j,k_v-1) * lw_stress_v(i,J) / Rho0
 
         vert_structure_numer_sum = 0.0
 
@@ -602,8 +607,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
           vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)
          
-          write(*,*) k, vert_structure_numer(k)
-          write(*,*) '-------------------------'
+          !write(*,*) k, vert_structure_numer(k)
+          !write(*,*) '-------------------------'
   
           vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
         enddo
@@ -725,6 +730,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     call post_data(CS%id_lw_body_force_v, lw_body_force_v, CS%diag)
   if (CS%id_lw_epsilon > 0) &
     call post_data(CS%id_lw_epsilon, lw_epsilon, CS%diag)
+  if (CS%id_lw_TKE > 0) &
+    call post_data(CS%id_lw_TKE, lw_TKE, CS%diag)
 
 end subroutine vertvisc
 
@@ -1855,6 +1862,9 @@ diag%axesCvL, Time, 'Meridional Lee Wave Body Force','m s-2')
 
   CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon', &
 diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking','W kg-1')
+
+  CS%id_lw_TKE = register_diag_field('ocean_model', 'lw_TKE', &
+diag%axesTL, Time, 'Bottom energy flux into lee waves','m3 s-3')
 
   if ((len_trim(CS%u_trunc_file) > 0) .or. (len_trim(CS%v_trunc_file) > 0)) &
     call PointAccel_init(MIS, Time, G, param_file, diag, dirs, CS%PointAccel_CSp)
