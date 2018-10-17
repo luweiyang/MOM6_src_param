@@ -589,7 +589,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
             exit
           endif
 
-          H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_u)
+          H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_v)
           H_z_v(k_v) = H_total_v(i,J)
           
         enddo
@@ -600,7 +600,11 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
         do k = 1,k_v-1
 
-          vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)  
+          vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)
+         
+          write(*,*) k, vert_structure_numer(k)
+          write(*,*) '-------------------------'
+  
           vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
         enddo
 
