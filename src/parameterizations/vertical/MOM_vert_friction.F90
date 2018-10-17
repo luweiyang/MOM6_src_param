@@ -1,4 +1,22 @@
 !> Implements vertical viscosity (vertvisc)
+!> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
+!> --- Assign variables ---  > L330 - 362 
+!> --- u-component      ---  > L412 - 468
+!> --- v-component      ---  > L572 - 622
+
+!> On 9 October 2018, save diagnostic fields
+!> --- Add identifier   ---  > L135 - 137
+!> --- Call post_data   ---  > L714 - 723
+!> --- Register diag field   > L1842-1853
+
+!> On 11 October 2018, replace constant N with N2_bot 
+!> Add subroutine find_N2_bottom     L159 - 265 
+!> Add Structure tv                  L278 - 280
+!> Add dimensions for h0_small_scale L356        Assign values L390
+!> Add varialbe N2_bot               L360        Call          L394        
+
+!> On 15 October 2018, add energy dissipation rate epsilon calculation 
+!> L460, 614 
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -19,6 +37,7 @@ use MOM_variables, only : thermo_var_ptrs, vertvisc_type
 use MOM_variables, only : cont_diag_ptrs, accel_diag_ptrs
 use MOM_variables, only : ocean_internal_state
 use MOM_verticalGrid, only : verticalGrid_type
+use MOM_EOS, only : calculate_density_derivs 
 
 implicit none ; private
 
@@ -113,6 +132,9 @@ type, public :: vertvisc_CS ; private
   integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_au_vv = -1, id_av_vv = -1
   integer :: id_h_u = -1, id_h_v = -1, id_hML_u = -1 , id_hML_v = -1
   integer :: id_Ray_u = -1, id_Ray_v = -1, id_taux_bot = -1, id_tauy_bot = -1
+  integer :: id_lw_stress_u = -1, id_lw_stress_v = -1
+  integer :: id_lw_body_force_u = -1, id_lw_body_force_v = -1
+  integer :: id_lw_epsilon = -1
   !>@}
 
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL()
@@ -134,6 +156,114 @@ contains
 !! There is an additional stress term on the right-hand side
 !! if DIRECT_STRESS is true, applied to the surface layer.
 
+subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
+  type(ocean_grid_type),                    intent(in)   :: G
+  type(verticalGrid_type),                  intent(in)   :: GV
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)   :: h
+  type(thermo_var_ptrs),                    intent(in)   :: tv
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)   :: T_f, S_f
+  real, dimension(SZI_(G),SZJ_(G)),         intent(in)   :: h2
+  type(forcing),                            intent(in)   :: fluxes
+  type(vertvisc_CS),                  pointer      :: CS
+  real, dimension(SZI_(G),SZJ_(G)),         intent(out)  :: N2_bot
+
+  real, dimension(SZI_(G),SZK_(G)+1) :: &
+    dRho_int      ! The unfiltered density differences across interfaces.
+  real, dimension(SZI_(G)) :: &
+    pres, &       ! The pressure at each interface, in Pa.
+    Temp_int, &   ! The temperature at each interface, in degC.
+    Salin_int, &  ! The salinity at each interface, in PSU.
+    drho_bot, &
+    h_amp, &
+    hb, &
+    z_from_bot, &
+    dRho_dT, &    ! The partial derivatives of density with temperature and
+    dRho_dS       ! salinity, in kg m-3 degC-1 and kg m-3 PSU-1.
+
+  real :: dz_int  ! The thickness associated with an interface, in m.
+  real :: G_Rho0  ! The gravitation acceleration divided by the Boussinesq
+                  ! density, in m4 s-2 kg-1.
+  logical :: do_i(SZI_(G)), do_any
+  integer :: i, j, k, is, ie, js, je, nz
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = G%ke
+  G_Rho0 = GV%g_Earth / GV%Rho0
+
+  ! Find the (limited) density jump across each interface.
+  do i=is,ie
+    dRho_int(i,1) = 0.0 ; dRho_int(i,nz+1) = 0.0
+  enddo
+!$OMP parallel do default(none) shared(is,ie,js,je,nz,tv,fluxes,G,GV,h,T_f,S_f, &
+!$OMP                                  h2,N2_bot,G_Rho0) &
+!$OMP                          private(pres,Temp_Int,Salin_Int,dRho_dT,dRho_dS, &
+!$OMP                                  hb,dRho_bot,z_from_bot,do_i,h_amp,       &
+!$OMP                                  do_any,dz_int) &
+!$OMP                     firstprivate(dRho_int)
+  do j=js,je
+    if (associated(tv%eqn_of_state)) then
+      if (associated(fluxes%p_surf)) then
+        do i=is,ie ; pres(i) = fluxes%p_surf(i,j) ; enddo
+      else
+        do i=is,ie ; pres(i) = 0.0 ; enddo
+      endif
+      do K=2,nz
+        do i=is,ie
+          pres(i) = pres(i) + GV%H_to_Pa*h(i,j,k-1)
+          Temp_Int(i) = 0.5 * (T_f(i,j,k) + T_f(i,j,k-1))
+          Salin_Int(i) = 0.5 * (S_f(i,j,k) + S_f(i,j,k-1))
+        enddo
+        call calculate_density_derivs(Temp_int, Salin_int, pres, &
+                 dRho_dT(:), dRho_dS(:), is, ie-is+1, tv%eqn_of_state)
+        do i=is,ie
+          dRho_int(i,K) = max(dRho_dT(i)*(T_f(i,j,k) - T_f(i,j,k-1)) + &
+                              dRho_dS(i)*(S_f(i,j,k) - S_f(i,j,k-1)), 0.0)
+        enddo
+      enddo
+    else
+      do K=2,nz ; do i=is,ie
+        dRho_int(i,K) = GV%Rlay(k) - GV%Rlay(k-1)
+      enddo ; enddo
+    endif
+
+    ! Find the bottom boundary layer stratification.
+    do i=is,ie
+      hb(i) = 0.0 ; dRho_bot(i) = 0.0
+      z_from_bot(i) = 0.5*GV%H_to_m*h(i,j,nz)
+      do_i(i) = (G%mask2dT(i,j) > 0.5)
+      h_amp(i) = sqrt(h2(i,j))
+    enddo
+
+    do k=nz,2,-1
+      do_any = .false.
+      do i=is,ie ; if (do_i(i)) then
+        dz_int = 0.5*GV%H_to_m*(h(i,j,k) + h(i,j,k-1))
+        z_from_bot(i) = z_from_bot(i) + dz_int ! middle of the layer above
+
+        hb(i) = hb(i) + dz_int
+        dRho_bot(i) = dRho_bot(i) + dRho_int(i,K)
+
+        if (z_from_bot(i) > h_amp(i)) then
+          if (k>2) then
+            ! Always include at least one full layer.
+            hb(i) = hb(i) + 0.5*GV%H_to_m*(h(i,j,k-1) + h(i,j,k-2))
+            dRho_bot(i) = dRho_bot(i) + dRho_int(i,K-1)
+          endif
+          do_i(i) = .false.
+        else
+          do_any = .true.
+        endif
+      endif ; enddo
+      if (.not.do_any) exit
+    enddo
+
+    do i=is,ie
+      if (hb(i) > 0.0) then
+        N2_bot(i,j) = (G_Rho0 * dRho_bot(i)) / hb(i)
+      else ;  N2_bot(i,j) = 0.0 ; endif
+    enddo
+  enddo
+
+end subroutine find_N2_bottom
+
 subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
                     taux_bot, tauy_bot)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
@@ -144,6 +274,11 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: v      !< Meridional velocity in m s-1
   real, intent(in), &
     dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: h      !< Layer thickness in H
+
+  type(thermo_var_ptrs)                  :: tv     !< A structure containing
+                                                   !! pointers to the
+                                                   !! thermodynamic fields
+
   type(forcing),         intent(in)      :: fluxes !< Structure containing forcing fields
   type(vertvisc_type),   intent(inout)   :: visc   !< Viscosities and bottom drag
   real,                  intent(in)      :: dt     !< Time increment in s
@@ -191,11 +326,49 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
                            ! stress is applied as a body force, in
                            ! units of m2 s-1.
 
+!==== Lee waves =======
+  real :: lw_body_force_u(SZIB_(G),SZJ_(G),SZK_(GV))   ! In fact, this is density * body force at u point.
+  real :: lw_body_force_v(SZI_(G),SZJB_(G),SZK_(GV))   ! In fact, this is density * body force at v point.
+
+  real :: lw_drag_coeff     ! Lee wave drag coefficient, in m s-1.
+
+  real :: lw_stress_u(SZIB_(G),SZJ_(G))      ! Lee wave stress at u point
+  real :: lw_stress_v(SZI_(G),SZJB_(G))      ! Lee wave stress at v point
+
+  real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))  ! Lee wave energy dissipation rate u component
+  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate total (u + v), a
+!scalar
+
+  real :: vert_structure_numer(SZK_(GV)) ! Numerator of the expression of 
+!vertical structure function
+  real :: vert_structure_numer_sum       ! Sum of numerators, used to replace
+!the real denominator in the vertical structure function. This way, vertical
+!structure function always sums up to 1.  
+  real :: vert_structure_u   ! Vertical structure function at u point
+  real :: vert_structure_v   ! Vertical structure function at v point
+  real :: decay_scale        ! Number of layers that are in the decay depth
+  real :: decay_depth        ! Decay depth in vertical structure function
+  real :: H_total_u(SZIB_(G),SZJ_(G)) ! Total depth at u point
+  real :: H_total_v(SZI_(G),SZJB_(G)) ! Total depth at v point
+  real :: H_z_u(SZK_(GV))    ! Equivalent to zl at u point
+  real :: H_z_v(SZK_(GV))    ! Equivalent to zl at v point
+  real :: dummy              ! Sum for vertical structure function
+  real :: h0_small_scale(SZI_(G),SZJ_(G))     ! Amplitude of small-scale topography
+  real :: kh_small_scale     ! Horizontal wavenumber for small-scale topography
+  real :: N_bot_temporary    ! Temporary bottom stratification, constant, in
+!s-1.
+  real :: N2_bot(SZI_(G),SZJ_(G))
+  integer :: k_u             ! intermediate index to loop in the ocean above topography  
+  integer :: k_v             ! intermediate index to loop in the ocean interior above topography 
+!======================
+
+
   logical :: do_i(SZIB_(G))
 
   integer :: i, j, k, is, ie, Isq, Ieq, Jsq, Jeq, nz, n
   is = G%isc ; ie = G%iec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = G%ke
+
 
   if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
@@ -211,6 +384,14 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   Idt = 1.0 / dt
 
   do k=1,nz ; do i=Isq,Ieq ; Ray(i,k) = 0.0 ; enddo ; enddo
+   
+  do j=G%jsc,G%jec 
+    do i=is,ie;  
+      h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
+    enddo
+  enddo
+
+  call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
 
   !   Update the zonal velocity component using a modification of a standard
   ! tridagonal solver.
@@ -227,11 +408,70 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       ADp%du_dt_visc(I,j,k) = u(I,j,k)
     enddo ; enddo ; endif
 
+!=========================
+! Luwei's Lee Wave Parameterisation - u(I,j,k) component
+
+      !write(*,*) '--------u component--------'
+
+      !decay_scale = 5.
+      decay_depth = 500.
+ 
+      kh_small_scale = 1./2000. ! horizontal wavenumber of small-scale
+!topography, in m-1.
+      do I=Isq,Ieq ; if (do_i(I)) then
+        
+        N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
+        !write(*,*) j, I, N_bot_temporary
+
+        lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
+
+        H_z_u(1) = CS%h_u(I,j,1)
+        H_total_u(I,j) = CS%h_u(I,j,1)
+        do k_u = 2,nz
+
+          if (CS%h_u(I,j,k_u) < 1.0) then
+            exit
+          endif
+
+          H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
+          H_z_u(k_u) = H_total_u(I,j)
+          
+        enddo
+        
+        lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
+
+        vert_structure_numer_sum = 0.0
+
+        do k = 1,k_u-1
+
+          !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
+          !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
+          vert_structure_numer(k) = exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)  
+          vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+        enddo
+
+        dummy = 0.0
+
+        do k = 1,k_u-1
+          vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
+          dummy = dummy + vert_structure_u
+
+          lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
+          lw_epsilon_u(I,j,k) = u(I,j,k) * lw_body_force_u(I,j,k) 
+          u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
+
+          !write(*,*) '--------------------------'
+          !write(*,*) k, u(I,j,k), dt_Rho0 * lw_body_force_u
+ 
+        enddo
+        
+      endif ; enddo ! end of i loop
+!=========================
+
 !   One option is to have the wind stress applied as a body force
 ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
 ! the wind stress is applied as a stress boundary condition.
     if (CS%direct_stress) then
-      print *,'**********DIRECT_STRESS part is working!**********'
       do I=Isq,Ieq ; if (do_i(I)) then
         surface_stress(I) = 0.0
         zDS = 0.0
@@ -239,8 +479,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         do k=1,nz
           h_a = 0.5 * (h(I,j,k) + h(I+1,j,k)) + h_neglect
           hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
-          u(I,j,k) = u(I,j,k) + I_Hmix * hfr * stress
-          u(I,j,k) = u(I,j,k) + 0.5
+          u(I,j,k) = u(I,j,k) + 1/h_a * hfr * stress
           zDS = zDS + h_a ; if (zDS >= Hmix) exit
         enddo
       endif ; enddo ! end of i loop
@@ -314,6 +553,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     endif
   enddo ! end u-component j loop
 
+
   ! Now work on the meridional velocity component.
 !$OMP parallel do default(none) shared(G,Jsq,Jeq,ADp,nz,v,CS,dt_Rho0,fluxes,h, &
 !$OMP                                  Hmix,I_Hmix,visc,dt_m_to_H,Idt,Rho0,    &
@@ -327,6 +567,60 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
       ADp%dv_dt_visc(i,J,k) = v(i,J,k)
     enddo ; enddo ; endif
+
+!=========================
+! Luwei's Lee Wave Parameterisation - v(i,J,k) component
+
+      !write(*,*) '--------v component--------'
+
+      !decay_scale = 5.
+      decay_depth = 500.
+      
+      do I=is,ie; if (do_i(I)) then
+        
+        lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
+        !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
+
+        H_z_v(1) = CS%h_v(i,J,1)
+        H_total_v(i,J) = CS%h_v(i,J,1)
+        do k_v = 2,nz
+
+          if (CS%h_v(I,j,k_v) < 1.0) then
+            exit
+          endif
+
+          H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_u)
+          H_z_v(k_v) = H_total_v(i,J)
+          
+        enddo
+        
+        lw_stress_v(i,J) = - 1e+3 * lw_drag_coeff * v(i,J,k_v-1)
+
+        vert_structure_numer_sum = 0.0
+
+        do k = 1,k_v-1
+
+          vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)  
+          vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+        enddo
+
+        dummy = 0.0
+
+        do k = 1,k_v-1
+          vert_structure_v = vert_structure_numer(k) / vert_structure_numer_sum
+          dummy = dummy + vert_structure_v
+
+          lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
+          lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) + v(i,J,k) * lw_body_force_v(i,J,k) 
+          v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
+
+          !write(*,*) '--------------------------'
+          !write(*,*) k, lw_epsilon(i,j,k)
+ 
+        enddo
+        
+      endif ; enddo ! end of i loop
+!=========================
 
 !   One option is to have the wind stress applied as a body force
 ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
@@ -417,6 +711,16 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     call post_data(CS%id_taux_bot, taux_bot, CS%diag)
   if (present(tauy_bot) .and. (CS%id_tauy_bot > 0)) &
     call post_data(CS%id_tauy_bot, tauy_bot, CS%diag)
+  if (CS%id_lw_stress_u > 0) &
+    call post_data(CS%id_lw_stress_u, lw_stress_u, CS%diag)
+  if (CS%id_lw_stress_v > 0) &
+    call post_data(CS%id_lw_stress_v, lw_stress_v, CS%diag)
+  if (CS%id_lw_body_force_u > 0) &
+    call post_data(CS%id_lw_body_force_u, lw_body_force_u, CS%diag)
+  if (CS%id_lw_body_force_v > 0) &
+    call post_data(CS%id_lw_body_force_v, lw_body_force_v, CS%diag)
+  if (CS%id_lw_epsilon > 0) &
+    call post_data(CS%id_lw_epsilon, lw_epsilon, CS%diag)
 
 end subroutine vertvisc
 
@@ -1534,6 +1838,19 @@ subroutine vertvisc_init(MIS, Time, G, GV, param_file, diag, ADp, dirs, &
      Time, 'Zonal Bottom Stress from Ocean to Earth', 'Pa')
   CS%id_tauy_bot = register_diag_field('ocean_model', 'tauy_bot', diag%axesCv1, &
      Time, 'Meridional Bottom Stress from Ocean to Earth', 'Pa')
+
+  CS%id_lw_stress_u = register_diag_field('ocean_model', 'lw_stress_u', &
+diag%axesCu1, Time, 'Zonal Bottom Lee Wave Stress','N m-2')
+  CS%id_lw_stress_v = register_diag_field('ocean_model', 'lw_stress_v', &
+diag%axesCv1, Time, 'Meridional Bottom Lee Wave Stress','N m-2')
+
+  CS%id_lw_body_force_u = register_diag_field('ocean_model', 'lw_body_force_u', &
+diag%axesCuL, Time, 'Zonal Lee Wave Body Force','m s-2')
+  CS%id_lw_body_force_v = register_diag_field('ocean_model', 'lw_body_force_v', &
+diag%axesCvL, Time, 'Meridional Lee Wave Body Force','m s-2')
+
+  CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon', &
+diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking','W kg-1')
 
   if ((len_trim(CS%u_trunc_file) > 0) .or. (len_trim(CS%v_trunc_file) > 0)) &
     call PointAccel_init(MIS, Time, G, param_file, diag, dirs, CS%PointAccel_CSp)
