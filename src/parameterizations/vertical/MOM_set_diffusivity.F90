@@ -1,3 +1,18 @@
+!* On 18 October 2018 Add diagnostic variable Kd_Yang
+!* Add identifier                L326-327
+!* Post data                     L891,     L922-926
+!* Register                      L3063-3064
+!* Add it into diffusivity_diags L358-359    
+!* Declare it in set_diffusivity L467
+!* Allocate and Deallocate       L544-546, L986
+!* Remap                         L3140-3145
+!* Key calculation               L785-789
+
+
+
+
+
+
 module MOM_set_diffusivity
 !***********************************************************************
 !*                   GNU General Public License                        *
@@ -308,6 +323,9 @@ type, public :: set_diffusivity_CS ; private
   integer :: id_Kd_Niku_Work   = -1
   integer :: id_Kd_Lowmode_Work= -1
 
+  integer :: id_Kd_Yang        = -1
+  integer :: id_Kd_Yang_z      = -1
+
   integer :: id_Fl_itidal                 = -1
   integer :: id_Fl_lowmode                = -1
   integer :: id_Polzin_decay_scale        = -1
@@ -336,6 +354,10 @@ type diffusivity_diags
     Fl_lowmode     => NULL(),& ! vertical flux of tidal turbulent dissipation
                                ! due to propagating low modes (m3/s3) (BDM)
     Kd_Niku        => NULL(),& ! lee-wave diffusivity at interfaces (m2/s)
+
+    Kd_Yang        => NULL(),& ! lee-wave diffusivity at interfaces associated
+                               ! with energy dissipation rate (m2/s)
+
     Kd_user        => NULL(),& ! user-added diffusivity at interfaces (m2/s)
     Kd_BBL         => NULL(),& ! BBL diffusivity at interfaces (m2/s)
     Kd_work        => NULL(),& ! layer integrated work by diapycnal mixing (W/m2)
@@ -442,6 +464,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   real :: N02_N2
   real :: epsilon
 
+  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)
+
   logical   :: use_EOS      ! If true, compute density from T/S using equation of state.
   type(p3d) :: z_ptrs(6)    ! pointers to diagns to be interpolated into depth space
   integer   :: kb(SZI_(G))  ! The index of the lightest layer denser than the
@@ -516,6 +540,11 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
       (CS%id_Kd_Niku_work > 0)) then
     allocate(dd%Kd_Niku(isd:ied,jsd:jed,nz+1)) ; dd%Kd_Niku(:,:,:) = 0.0
   endif
+
+  if ((CS%id_Kd_Yang > 0) .or. (CS%id_Kd_Yang_z > 0)) then
+    allocate(dd%Kd_Yang(isd:ied,jsd:jed,nz+1)) ; dd%Kd_Yang(:,:,:) = 0.0
+  endif
+
   if ((CS%id_Kd_user > 0) .or. (CS%id_Kd_user_z > 0)) then
     allocate(dd%Kd_user(isd:ied,jsd:jed,nz+1)) ; dd%Kd_user(:,:,:) = 0.0
   endif
@@ -753,7 +782,11 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
     if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. CS%Lowmode_itidal_dissipation) &
       call add_int_tide_diffusivity(h, N2_bot, j, TKE_to_Kd, maxTKE, G, GV, CS, &
                                     dd, N2_lay, Kd, Kd_int)
-      write(*,*) 'Hello'
+      do k=1,nz+1 ; do i=is,ie
+        Kd_Yang(i,j,k) = 1.0e-5
+        Kd_int(i,j,k) = Kd_int(i,j,k) + Kd_Yang(i,j,k)
+        write(*,*) j, k, i, Kd_int(i,j,k), Kd_Yang(i,j,k)
+      enddo ; enddo
     
     ! This adds the diffusion sustained by the energy extracted from the flow
     ! by the bottom drag.
@@ -854,6 +887,9 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
     if (CS%id_Fl_itidal > 0) call post_data(CS%id_Fl_itidal, dd%Fl_itidal, CS%diag)
     if (CS%id_Kd_itidal > 0) call post_data(CS%id_Kd_itidal, dd%Kd_itidal, CS%diag)
     if (CS%id_Kd_Niku   > 0) call post_data(CS%id_Kd_Niku,   dd%Kd_Niku,   CS%diag)
+
+    if (CS%id_Kd_Yang   > 0) call post_data(CS%id_Kd_Yang,   dd%Kd_Yang,   CS%diag)
+
     if (CS%id_Kd_lowmode> 0) call post_data(CS%id_Kd_lowmode, dd%Kd_lowmode, CS%diag)
     if (CS%id_Fl_lowmode> 0) call post_data(CS%id_Fl_lowmode, dd%Fl_lowmode, CS%diag)
     if (CS%id_Kd_user   > 0) call post_data(CS%id_Kd_user,   dd%Kd_user,   CS%diag)
@@ -881,6 +917,12 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
       num_z_diags        = num_z_diags + 1
       z_ids(num_z_diags) = CS%id_Kd_Niku_z
       z_ptrs(num_z_diags)%p => dd%Kd_Niku
+    endif
+
+    if (CS%id_Kd_Yang_z > 0) then
+      num_z_diags        = num_z_diags + 1
+      z_ids(num_z_diags) = CS%id_Kd_Yang_z
+      z_ptrs(num_z_diags)%p => dd%Kd_Yang
     endif
 
     if (CS%id_Kd_lowmode_z > 0) then
@@ -940,6 +982,9 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   if (associated(dd%Kd_work)) deallocate(dd%Kd_work)
   if (associated(dd%Kd_user)) deallocate(dd%Kd_user)
   if (associated(dd%Kd_Niku)) deallocate(dd%Kd_Niku)
+
+  if (associated(dd%Kd_Yang)) deallocate(dd%Kd_Yang)
+
   if (associated(dd%Kd_Niku_work)) deallocate(dd%Kd_Niku_work)
   if (associated(dd%Kd_Itidal_Work))  deallocate(dd%Kd_Itidal_Work)
   if (associated(dd%Kd_Lowmode_Work)) deallocate(dd%Kd_Lowmode_Work)
@@ -3014,6 +3059,10 @@ subroutine set_diffusivity_init(Time, G, GV, param_file, diag, CS, diag_to_Z_CSp
         'Lee wave Driven Turbulent Kinetic Energy', 'Watt meter-2')
     CS%id_Kd_Niku = register_diag_field('ocean_model','Kd_Nikurashin',diag%axesTi,Time, &
          'Lee Wave Driven Diffusivity', 'meter2 sec-1')
+
+    CS%id_Kd_Yang = register_diag_field('ocean_model','Kd_Yang',diag%axesTi,Time, &
+         'Lee Wave Driven Diffusivity derived from energy dissipation rate', 'meter2 sec-1')
+
   else
     CS%Decay_scale_factor_lee = -9.e99 ! This should never be used if CS%Lee_wave_dissipation = False
   endif
@@ -3087,6 +3136,12 @@ subroutine set_diffusivity_init(Time, G, GV, param_file, diag, CS, diag_to_Z_CSp
          vd = var_desc("Kd_Nikurashin", "meter2 second-1", &
                        "Lee Wave Driven Diffusivity, interpolated to z", z_grid='z')
          CS%id_Kd_Niku_z = register_Zint_diag(vd, CS%diag_to_Z_CSp, Time)
+      endif
+      if (CS%Lee_wave_dissipation) then
+         vd = var_desc("Kd_Yang", "meter2 second-1", &
+                       "Lee Wave Driven Diffusivity derived from energy dissipation rate, & 
+                       interpolated to z", z_grid='z')
+         CS%id_Kd_Yang_z = register_Zint_diag(vd, CS%diag_to_Z_CSp, Time)
       endif
       if (CS%Lowmode_itidal_dissipation) then
         vd = var_desc("Kd_lowmode","meter2 second-1", &
