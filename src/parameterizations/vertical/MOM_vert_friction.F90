@@ -1,22 +1,28 @@
 !> Implements vertical viscosity (vertvisc)
 !> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L330 - 362 
-!> --- u-component      ---  > L412 - 468
-!> --- v-component      ---  > L572 - 622
+!> --- Assign variables ---  > L336 - 371 
+!> --- u-component      ---  > L423 - 491
+!> --- v-component      ---  > L595 - 661
 
 !> On 9 October 2018, save diagnostic fields
-!> --- Add identifier   ---  > L135 - 137
-!> --- Call post_data   ---  > L714 - 723
-!> --- Register diag field   > L1842-1853
+!> --- Add identifier   ---  > L141 - 143
+!> --- Call post_data   ---  > L753 - 764
+!> --- Register diag field   > L1883-1897
 
 !> On 11 October 2018, replace constant N with N2_bot 
-!> Add subroutine find_N2_bottom     L159 - 265 
-!> Add Structure tv                  L278 - 280
-!> Add dimensions for h0_small_scale L356        Assign values L390
-!> Add varialbe N2_bot               L360        Call          L394        
+!> Add subroutine find_N2_bottom     L165 - 271 
+!> Add Structure tv                  L284 - 286
+!> Add dimensions for h0_small_scale L365        Assign values L401
+!> Add varialbe N2_bot               L369        Call          L405        
 
 !> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L460, 614 
+!> L476, 646 
+
+!> On 18 October 2018, 
+!> Add depth limit for lee wave stress calculation, which is only applied to 
+!> depth > 1km                       L452 - 456, 620 - 624 
+!> Add initial values for body force and epsilon, hoping to eliminate large
+!> values below the topography       L381 - 382, 484 - 489, 654 - 659
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -372,6 +378,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   is = G%isc ; ie = G%iec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = G%ke
 
+  lw_body_force_u(:,:,:) = 0.0 ; lw_body_force_v(:,:,:) = 0
+  lw_epsilon_u(:,:,:) = 0.0 ; lw_epsilon(:,:,:) = 0.0
 
   if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
@@ -414,62 +422,73 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !=========================
 ! Luwei's Lee Wave Parameterisation - u(I,j,k) component
 
-      !write(*,*) '--------u component--------'
+    !write(*,*) '--------u component--------'
 
-      !decay_scale = 5.
-      decay_depth = 500.
+    !decay_scale = 5.
+    decay_depth = 500. ! Could also be forumlated as a fucntion of U/N.
  
-      kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
+    kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
 !topography, in m-1.
-      do I=Isq,Ieq ; if (do_i(I)) then
+    do I=Isq,Ieq ; if (do_i(I)) then
         
-        N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
-        !write(*,*) j, I, N_bot_temporary
+      N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
+      !write(*,*) j, I, N_bot_temporary
 
-        lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
+      lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
 
-        H_z_u(1) = CS%h_u(I,j,1)
-        H_total_u(I,j) = CS%h_u(I,j,1)
-        do k_u = 2,nz
+      H_z_u(1) = CS%h_u(I,j,1)
+      H_total_u(I,j) = CS%h_u(I,j,1)
+      do k_u = 2,nz
 
-          if (CS%h_u(I,j,k_u) < 1.0) then
-            exit
-          endif
+        if (CS%h_u(I,j,k_u) < 1.0) then
+          exit
+        endif
 
-          H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
-          H_z_u(k_u) = H_total_u(I,j)
+        H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
+        H_z_u(k_u) = H_total_u(I,j)
           
-        enddo
-        
+      enddo
+       
+      if (H_total_u(I,j) < 1000.0) then
+        lw_stress_u(I,j) = 0.0
+      elseif (H_total_u(I,j) > 1000.0) then 
         lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
-        lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
+      endif
 
-        vert_structure_numer_sum = 0.0
+      lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
+      vert_structure_numer_sum = 0.0
 
-        do k = 1,k_u-1
+      do k = 1,k_u-1 ! k_u -1 is the last level above topography
 
-          !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
-          !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
-          vert_structure_numer(k) = exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)  
-          vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
-        enddo
+        !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
+        !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
+        vert_structure_numer(k) = exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)  
+        vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+      enddo
 
-        dummy = 0.0
+      dummy = 0.0
 
-        do k = 1,k_u-1
-          vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
-          dummy = dummy + vert_structure_u
+      do k = 1,k_u-1
+        vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
+        dummy = dummy + vert_structure_u
 
-          lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
-          lw_epsilon_u(I,j,k) = - u(I,j,k) * lw_body_force_u(I,j,k) 
-          u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
+        lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
+        lw_epsilon_u(I,j,k) = - u(I,j,k) * lw_body_force_u(I,j,k) 
+        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
 
-          !write(*,*) '--------------------------'
-          !write(*,*) k, u(I,j,k), dt_Rho0 * lw_body_force_u
+        !write(*,*) '--------------------------'
+        !write(*,*) k, u(I,j,k), dt_Rho0 * lw_body_force_u
  
+      enddo
+
+      if (k_u < nz) then
+        do k = k_u,nz
+          lw_body_force_u(I,j,k) = 0.0
+          lw_epsilon_u(I,j,k) = 0.0
         enddo
+      endif
         
-      endif ; enddo ! end of i loop
+    endif ; enddo ! end of i loop
 !=========================
 
 !   One option is to have the wind stress applied as a body force
@@ -575,60 +594,71 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !=========================
 ! Luwei's Lee Wave Parameterisation - v(i,J,k) component
 
-      !write(*,*) '--------v component--------'
+    !write(*,*) '--------v component--------'
 
-      !decay_scale = 5.
-      decay_depth = 500.
-      
-      do I=is,ie; if (do_i(I)) then
+    !decay_scale = 5.
+    decay_depth = 500.
+     
+    do I=is,ie; if (do_i(I)) then
         
-        lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
-        !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
+      lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
+      !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
 
-        H_z_v(1) = CS%h_v(i,J,1)
-        H_total_v(i,J) = CS%h_v(i,J,1)
-        do k_v = 2,nz
+      H_z_v(1) = CS%h_v(i,J,1)
+      H_total_v(i,J) = CS%h_v(i,J,1)
+      do k_v = 2,nz
 
-          if (CS%h_v(I,j,k_v) < 1.0) then
-            exit
-          endif
+        if (CS%h_v(I,j,k_v) < 1.0) then
+          exit
+        endif
 
-          H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_v)
-          H_z_v(k_v) = H_total_v(i,J)
+        H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_v)
+        H_z_v(k_v) = H_total_v(i,J)
           
-        enddo
+      enddo
         
+      if (H_total_v(i,J) < 1000.0) then
+        lw_stress_v(i,J) = 0.0
+      elseif (H_total_v(i,J) > 1000.0) then 
         lw_stress_v(i,J) = - 1e+3 * lw_drag_coeff * v(i,J,k_v-1)
-        lw_TKE(i,j) = lw_TKE_u(I,j) + v(I,j,k_v-1) * lw_stress_v(i,J) / Rho0
+      endif
 
-        vert_structure_numer_sum = 0.0
+      lw_TKE(i,j) = lw_TKE_u(I,j) + v(I,j,k_v-1) * lw_stress_v(i,J) / Rho0
+      vert_structure_numer_sum = 0.0
 
-        do k = 1,k_v-1
+      do k = 1,k_v-1 ! k_v -1 is the level above topography
 
-          vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)
+        vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)
          
-          !write(*,*) k, vert_structure_numer(k)
-          !write(*,*) '-------------------------'
+        !write(*,*) k, vert_structure_numer(k)
+        !write(*,*) '-------------------------'
   
-          vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
-        enddo
+        vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+      enddo
 
-        dummy = 0.0
+      dummy = 0.0
 
-        do k = 1,k_v-1
-          vert_structure_v = vert_structure_numer(k) / vert_structure_numer_sum
-          dummy = dummy + vert_structure_v
+      do k = 1,k_v-1
+        vert_structure_v = vert_structure_numer(k) / vert_structure_numer_sum
+        dummy = dummy + vert_structure_v
 
-          lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
-          lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) 
-          v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
+        lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
+        lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) 
+        v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
-          !write(*,*) '--------------------------'
-          !write(*,*) k, lw_epsilon(i,j,k)
+        !write(*,*) '--------------------------'
+        !write(*,*) k, lw_epsilon(i,j,k)
  
-        enddo
+      enddo
         
-      endif ; enddo ! end of i loop
+      if (k_v < nz) then
+        do k = k_v,nz
+          lw_body_force_v(i,J,k) = 0.0
+          lw_epsilon(i,j,k) = 0.0
+        enddo
+      endif
+        
+    endif ; enddo ! end of i loop
 !=========================
 
 !   One option is to have the wind stress applied as a body force
