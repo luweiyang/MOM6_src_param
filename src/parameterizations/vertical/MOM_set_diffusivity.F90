@@ -753,7 +753,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
     if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. CS%Lowmode_itidal_dissipation) &
       call add_int_tide_diffusivity(h, N2_bot, j, TKE_to_Kd, maxTKE, G, GV, CS, &
                                     dd, N2_lay, Kd, Kd_int)
-
+      write(*,*) 'Hello'
+    
     ! This adds the diffusion sustained by the energy extracted from the flow
     ! by the bottom drag.
     if (CS%bottomdraglaw .and. (CS%BBL_effic>0.0)) then
