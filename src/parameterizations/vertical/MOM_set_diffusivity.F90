@@ -791,6 +791,9 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
 
       TKE_Yang(i,j,k) = 1.e-8
 
+!---- Mask TKE_to_Kd under topography -----
+!     write(*,*) j, k, TKE_to_Kd(10,k) 
+
       Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k)
 
       if (CS%Kd_max >= 0.0) Kd_add = min(Kd_add, CS%Kd_max)
@@ -1209,6 +1212,12 @@ subroutine find_TKE_to_Kd(h, tv, dRho_int, N2_lay, j, dt, G, GV, CS, &
                               CS%Omega**2 * GV%H_to_m*(h(i,j,k) + H_neglect))
     endif
   enddo ; enddo
+
+!====Luwei's modification on TKE_to_Kd for area under topography====
+  do k=1,nz ; do i=is,ie
+    if (h(i,j,k) < 1.0) TKE_to_Kd(i,k) = 0.0
+  enddo ; enddo
+!===================================================================
 
 end subroutine find_TKE_to_Kd
 
