@@ -464,7 +464,11 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   real :: N02_N2
   real :: epsilon
 
-  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)
+!==== Luwei Yang =====
+  real :: TKE_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)  ! Temporary lee wave energy dissipation (W/kg)
+  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)  ! Lee wave diffusivity (m2/s)
+  real :: Kd_add
+!=====================
 
   logical   :: use_EOS      ! If true, compute density from T/S using equation of state.
   type(p3d) :: z_ptrs(6)    ! pointers to diagns to be interpolated into depth space
@@ -782,11 +786,27 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
     if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. CS%Lowmode_itidal_dissipation) &
       call add_int_tide_diffusivity(h, N2_bot, j, TKE_to_Kd, maxTKE, G, GV, CS, &
                                     dd, N2_lay, Kd, Kd_int)
-      do k=1,nz+1 ; do i=is,ie
-        Kd_Yang(i,j,k) = 1.0e-5
-        Kd_int(i,j,k) = Kd_int(i,j,k) + Kd_Yang(i,j,k)
-        write(*,*) j, k, i, Kd_int(i,j,k), Kd_Yang(i,j,k)
-      enddo ; enddo
+!==== Luwei Yang ============== 
+    do k=1,nz+1 ; do i=is,ie
+
+      TKE_Yang(i,j,k) = 0.
+
+      Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k)
+
+      if (CS%Kd_max >= 0.0) Kd_add = min(Kd_add, CS%Kd_max)
+        Kd(i,j,k) = Kd(i,j,k) + Kd_add
+
+      if (present(Kd_int)) then
+        Kd_int(i,j,K)   = Kd_int(i,j,K)   + 0.5*Kd_add
+        Kd_int(i,j,K+1) = Kd_int(i,j,K+1) + 0.5*Kd_add
+      endif
+
+      if (associated(dd%Kd_Yang)) then
+        dd%Kd_Yang(i,j,k) = Kd_add
+      endif
+
+    enddo ; enddo
+!=========================
     
     ! This adds the diffusion sustained by the energy extracted from the flow
     ! by the bottom drag.
