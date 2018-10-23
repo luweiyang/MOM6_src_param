@@ -1,32 +1,32 @@
 !> Implements vertical viscosity (vertvisc)
 !> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L340 - 377 
-!> --- u-component      ---  > L429 - 497
-!> --- v-component      ---  > L601 - 668
+!> --- Assign variables ---  > L340 - 378 
+!> --- u-component      ---  > L430 - 500
+!> --- v-component      ---  > L604 - 672
 
 !> On 9 October 2018, save diagnostic fields
 !> --- Add identifier   ---  > L145 - 147
-!> --- Call post_data   ---  > L760 - 773
-!> --- Register diag field   > L1892-1908
+!> --- Call post_data   ---  > L764 - 777
+!> --- Register diag field   > L1896-1912
 
 !> On 11 October 2018, replace constant N with N2_bot 
 !> Add subroutine find_N2_bottom     L169 - 275 
 !> Add Structure tv                  L288 - 290
-!> Add dimensions for h0_small_scale L371        Assign values L407
-!> Add varialbe N2_bot               L375        Call          L411       
+!> Add dimensions for h0_small_scale L372        Assign values L408
+!> Add varialbe N2_bot               L376        Call          L412       
 
 !> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L482, 652 
+!> L483, 655 
 
 !> On 18 October 2018, 
 !> Add depth limit for lee wave stress calculation, which is only applied to 
-!> depth > 1km                       L458 - 462, 626 - 630 
+!> depth > 1km                       L459 - 463, 629 - 633 
 !> Add initial values for body force and epsilon, hoping to eliminate large
-!> values below the topography       L387 - 388, 490 - 495, 661 - 666
+!> values below the topography       L388 - 389, 492 - 498, 664 - 670
 
 !> On 23 October 2018,
 !> Add lw_epsilon_lay - epsilon times layer thickness, get ready for variable
-!> transfer.                         L653
+!> transfer.                         L656
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -348,6 +348,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component
   real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (u + v), a
 !scalar
+  real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate u component
   real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer
 !total (u + v), a scalar
 
@@ -479,7 +480,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         dummy = dummy + vert_structure_u
 
         lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
-        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k)) 
+        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k))
+        lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) 
         u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
 
         !write(*,*) '--------------------------'
@@ -491,6 +493,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         do k = k_u,nz
           lw_body_force_u(I,j,k) = 0.0
           lw_epsilon_u(I,j,k) = 0.0
+          lw_epsilon_lay_u(I,j,k) = 0.0
         enddo
       endif
         
@@ -650,7 +653,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
         lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k))
-        lw_epsilon_lay(i,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k)) * CS%h_v(i,J,k)
+        lw_epsilon_lay(i,j,k) = lw_epsilon_lay_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k)) * CS%h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
         !write(*,*) '--------------------------'
@@ -662,6 +665,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         do k = k_v,nz
           lw_body_force_v(i,J,k) = 0.0
           lw_epsilon(i,j,k) = 0.0
+          lw_epsilon_lay(i,j,k) = 0.0
         enddo
       endif
         
