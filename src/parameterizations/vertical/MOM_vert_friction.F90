@@ -349,6 +349,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (u + v), a
 !scalar
   real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate u component
+  real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate u component
   real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer
 !total (u + v), a scalar
 
@@ -653,7 +654,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
         lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k))
-        lw_epsilon_lay(i,j,k) = lw_epsilon_lay_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k)) * CS%h_v(i,J,k)
+        lw_epsilon_lay_v(i,J,k) = abs(v(i,J,k) * lw_body_force_v(i,J,k)) * CS%h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
         !write(*,*) '--------------------------'
@@ -665,9 +666,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         do k = k_v,nz
           lw_body_force_v(i,J,k) = 0.0
           lw_epsilon(i,j,k) = 0.0
-          lw_epsilon_lay(i,j,k) = 0.0
+          lw_epsilon_lay_v(i,J,k) = 0.0
         enddo
       endif
+      
+      do k = 1,nz
+        lw_epsilon_lay(i,j,k) = lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_v(i,J,k)
+      enddo
         
     endif ; enddo ! end of i loop
 !=========================
