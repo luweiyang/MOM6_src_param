@@ -1,28 +1,32 @@
 !> Implements vertical viscosity (vertvisc)
 !> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L336 - 371 
-!> --- u-component      ---  > L423 - 491
-!> --- v-component      ---  > L595 - 661
+!> --- Assign variables ---  > L340 - 377 
+!> --- u-component      ---  > L429 - 497
+!> --- v-component      ---  > L601 - 668
 
 !> On 9 October 2018, save diagnostic fields
-!> --- Add identifier   ---  > L141 - 143
-!> --- Call post_data   ---  > L753 - 764
-!> --- Register diag field   > L1883-1897
+!> --- Add identifier   ---  > L145 - 147
+!> --- Call post_data   ---  > L760 - 773
+!> --- Register diag field   > L1892-1908
 
 !> On 11 October 2018, replace constant N with N2_bot 
-!> Add subroutine find_N2_bottom     L165 - 271 
-!> Add Structure tv                  L284 - 286
-!> Add dimensions for h0_small_scale L365        Assign values L401
-!> Add varialbe N2_bot               L369        Call          L405        
+!> Add subroutine find_N2_bottom     L169 - 275 
+!> Add Structure tv                  L288 - 290
+!> Add dimensions for h0_small_scale L371        Assign values L407
+!> Add varialbe N2_bot               L375        Call          L411       
 
 !> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L476, 646 
+!> L482, 652 
 
 !> On 18 October 2018, 
 !> Add depth limit for lee wave stress calculation, which is only applied to 
-!> depth > 1km                       L452 - 456, 620 - 624 
+!> depth > 1km                       L458 - 462, 626 - 630 
 !> Add initial values for body force and epsilon, hoping to eliminate large
-!> values below the topography       L381 - 382, 484 - 489, 654 - 659
+!> values below the topography       L387 - 388, 490 - 495, 661 - 666
+
+!> On 23 October 2018,
+!> Add lw_epsilon_lay - epsilon times layer thickness, get ready for variable
+!> transfer.                         L653
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -140,7 +144,7 @@ type, public :: vertvisc_CS ; private
   integer :: id_Ray_u = -1, id_Ray_v = -1, id_taux_bot = -1, id_tauy_bot = -1
   integer :: id_lw_stress_u = -1, id_lw_stress_v = -1
   integer :: id_lw_body_force_u = -1, id_lw_body_force_v = -1
-  integer :: id_lw_epsilon = -1, id_lw_TKE = -1
+  integer :: id_lw_epsilon = -1, id_lw_epsilon_lay= -1, id_lw_TKE = -1
   !>@}
 
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL()
@@ -341,9 +345,11 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_stress_u(SZIB_(G),SZJ_(G))      ! Lee wave stress at u point
   real :: lw_stress_v(SZI_(G),SZJB_(G))      ! Lee wave stress at v point
 
-  real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))  ! Lee wave energy dissipation rate u component
-  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate total (u + v), a
+  real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component
+  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (u + v), a
 !scalar
+  real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer
+!total (u + v), a scalar
 
   real :: lw_TKE_u(SZIB_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component, in m3 s-3.
   real :: lw_TKE(SZI_(G),SZJ_(G))        ! Bottom energy flux into lee waves total (u + v), a scalar. 
@@ -599,7 +605,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     !decay_scale = 5.
     decay_depth = 500.
      
-    do I=is,ie; if (do_i(I)) then
+    do i=is,ie; if (do_i(i)) then
         
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
@@ -643,7 +649,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         dummy = dummy + vert_structure_v
 
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
-        lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) 
+        lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k)
+        lw_epsilon_lay(i,j,k) = lw_epsilon_u(I,j,k) * h_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) * h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
         !write(*,*) '--------------------------'
@@ -760,6 +767,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     call post_data(CS%id_lw_body_force_v, lw_body_force_v, CS%diag)
   if (CS%id_lw_epsilon > 0) &
     call post_data(CS%id_lw_epsilon, lw_epsilon, CS%diag)
+  if (CS%id_lw_epsilon_lay > 0) &
+    call post_data(CS%id_lw_epsilon_lay, lw_epsilon_lay, CS%diag)
   if (CS%id_lw_TKE > 0) &
     call post_data(CS%id_lw_TKE, lw_TKE, CS%diag)
 
@@ -1892,6 +1901,8 @@ diag%axesCvL, Time, 'Meridional Lee Wave Body Force','m s-2')
 
   CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon', &
 diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking','W kg-1')
+  CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon_lay', &
+diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking in each layer','W kg-1')
 
   CS%id_lw_TKE = register_diag_field('ocean_model', 'lw_TKE', &
 diag%axesTL, Time, 'Bottom energy flux into lee waves','m3 s-3')
