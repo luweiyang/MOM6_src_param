@@ -650,7 +650,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
         lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k)
-        lw_epsilon_lay(i,j,k) = lw_epsilon_u(I,j,k) * h_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) * h_v(i,J,k)
+        lw_epsilon_lay(i,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) - v(i,J,k) * lw_body_force_v(i,J,k) * CS%h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
         !write(*,*) '--------------------------'
@@ -1901,8 +1901,8 @@ diag%axesCvL, Time, 'Meridional Lee Wave Body Force','m s-2')
 
   CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon', &
 diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking','W kg-1')
-  CS%id_lw_epsilon = register_diag_field('ocean_model', 'lw_epsilon_lay', &
-diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking in each layer','W kg-1')
+  CS%id_lw_epsilon_lay = register_diag_field('ocean_model', 'lw_epsilon_lay', &
+diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking in each layer','m3 s-3')
 
   CS%id_lw_TKE = register_diag_field('ocean_model', 'lw_TKE', &
 diag%axesTL, Time, 'Bottom energy flux into lee waves','m3 s-3')
