@@ -231,8 +231,10 @@ type, public :: vertvisc_type
                         ! between each layer, in m2 s-1.
     Kv_turb => NULL(), &! The turbulent vertical viscosity at the interfaces
                         ! between each layer, in m2 s-1.
-    TKE_turb => NULL()  ! The turbulent kinetic energy per unit mass defined
+    TKE_turb => NULL(), & ! The turbulent kinetic energy per unit mass defined
                         ! at the interfaces between each layer, in m2 s-2.
+    lw_epsilon_lay => NULL() ! The energy dissipation rate due to lee wave
+                        ! breaking at each layer. 
 end type vertvisc_type
 
 type, public :: BT_cont_type
