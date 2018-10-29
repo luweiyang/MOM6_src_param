@@ -779,7 +779,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
 !==== Luwei Yang ============== 
     do k=1,nz+1 ; do i=is,ie
 
-      TKE_Yang(i,j,k) = 1.e-8
+      !TKE_Yang(i,j,k) = 1.e-8
+      TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
 
       Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k)
 
