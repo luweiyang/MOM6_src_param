@@ -346,14 +346,22 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_stress_v(SZI_(G),SZJB_(G))      ! Lee wave stress at v point
 
   real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component
-  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (u + v), a
+  real :: lw_epsilon_ut(SZI_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component interpolated to tracer points
+  real :: lw_epsilon_v(SZI_(G),SZJB_(G),SZK_(GV))     ! Lee wave energy dissipation rate v component
+  real :: lw_epsilon_vt(SZI_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate v component interpolated to tracer points
+  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (ut + vt), a
 !scalar
-  real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate u component
-  real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate u component
-  real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer
-!total (u + v), a scalar
+  real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer u component
+  real :: lw_epsilon_lay_ut(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer u component interpolated to tracer points
+  real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component
+  real :: lw_epsilon_lay_vt(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component interpolated to tracer points
+  real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer total tracer points
+!total (ut + vt), a scalar
 
   real :: lw_TKE_u(SZIB_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component, in m3 s-3.
+  real :: lw_TKE_v(SZI_(G),SZJB_(G))     ! Bottom energy flux into lee waves v component, in m3 s-3.
+  real :: lw_TKE_ut(SZI_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component interpolated to tracer points, in m3 s-3.
+  real :: lw_TKE_vt(SZI_(G),SZJ_(G))     ! Bottom energy flux into lee waves v component interpolated to tracer points, in m3 s-3.
   real :: lw_TKE(SZI_(G),SZJ_(G))        ! Bottom energy flux into lee waves total (u + v), a scalar. 
 
   real :: vert_structure_numer(SZK_(GV)) ! Numerator of the expression of 
@@ -386,8 +394,16 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   is = G%isc ; ie = G%iec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = G%ke
 
-  lw_body_force_u(:,:,:) = 0.0 ; lw_body_force_v(:,:,:) = 0
-  lw_epsilon_u(:,:,:) = 0.0 ; lw_epsilon(:,:,:) = 0.0
+  lw_body_force_u(:,:,:) = 0.0 ;  lw_body_force_v(:,:,:) = 0.0
+  lw_epsilon_u(:,:,:) = 0.0 ;     lw_epsilon_v(:,:,:) = 0.0
+  lw_epsilon_ut(:,:,:) = 0.0 ;    lw_epsilon_vt(:,:,:) = 0.0
+  lw_epsilon(:,:,:) = 0.0
+  lw_epsilon_lay_u(:,:,:) = 0.0;  lw_epsilon_lay_v(:,:,:) = 0.0
+  lw_epsilon_lay_ut(:,:,:) = 0.0; lw_epsilon_lay_vt(:,:,:) = 0.0
+  lw_epsilon_lay(:,:,:) = 0.0 
+  lw_TKE_u(:,:) = 1.e-20;         lw_TKE_v(:,:) = 1.e-20
+  lw_TKE_ut(:,:) = 1.e-20;        lw_TKE_vt(:,:) = 1.e-20
+  lw_TKE(:,:) = 1.e-20  
 
   if (.not.associated(CS)) call MOM_error(FATAL,"MOM_vert_friction(visc): "// &
          "Module must be initialized before it is used.")
@@ -485,12 +501,12 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) 
         u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
 
-        !write(*,*) '--------------------------'
-        !write(*,*) k, u(I,j,k), dt_Rho0 * lw_body_force_u
+        !write(*,*) 'u-----------u-------------'
+        !write(*,*) k, CS%h_u(I,j,k), lw_epsilon_u(I,j,k), lw_epsilon_lay_u(I,j,k)
  
       enddo
 
-      if (k_u < nz) then
+      if (k_u-1 < nz) then
         do k = k_u,nz
           lw_body_force_u(I,j,k) = 0.0
           lw_epsilon_u(I,j,k) = 0.0
@@ -499,6 +515,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       endif
         
     endif ; enddo ! end of i loop
+
 !=========================
 
 !   One option is to have the wind stress applied as a body force
@@ -618,7 +635,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       H_total_v(i,J) = CS%h_v(i,J,1)
       do k_v = 2,nz
 
-        if (CS%h_v(I,j,k_v) < 1.0) then
+        if (CS%h_v(i,J,k_v) < 1.0) then
           exit
         endif
 
@@ -633,7 +650,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_stress_v(i,J) = - 1e+3 * lw_drag_coeff * v(i,J,k_v-1)
       endif
 
-      lw_TKE(i,j) = lw_TKE_u(I,j) + v(I,j,k_v-1) * lw_stress_v(i,J) / Rho0
+      lw_TKE_v(i,J) = v(i,J,k_v-1) * lw_stress_v(i,J) / Rho0
       vert_structure_numer_sum = 0.0
 
       do k = 1,k_v-1 ! k_v -1 is the level above topography
@@ -653,28 +670,29 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         dummy = dummy + vert_structure_v
 
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
-        lw_epsilon(i,j,k) = lw_epsilon_u(I,j,k) + abs(v(i,J,k) * lw_body_force_v(i,J,k))
-        lw_epsilon_lay_v(i,J,k) = abs(v(i,J,k) * lw_body_force_v(i,J,k)) * CS%h_v(i,J,k)
+        lw_epsilon_v(i,J,k) = abs(v(i,J,k) * lw_body_force_v(i,J,k))
+        lw_epsilon_lay_v(i,J,k) = lw_epsilon_v(i,J,k) * CS%h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
-        !write(*,*) '--------------------------'
-        !write(*,*) k, lw_epsilon(i,j,k)
+        !write(*,*) 'v-----------v-------------'
+        !write(*,*) k, CS%h_v(i,J,k), abs(v(i,J,k) * lw_body_force_v(i,J,k)), lw_epsilon_lay_v(i,J,k)
  
       enddo
         
       if (k_v < nz) then
         do k = k_v,nz
           lw_body_force_v(i,J,k) = 0.0
-          lw_epsilon(i,j,k) = 0.0
+          lw_epsilon_v(i,J,k) = 0.0
           lw_epsilon_lay_v(i,J,k) = 0.0
         enddo
       endif
       
-      do k = 1,nz
-        lw_epsilon_lay(i,j,k) = lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_v(i,J,k)
-      enddo
+      !do k = 1,nz
+        !lw_epsilon_lay(i,j,k) = lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_v(i,J,k)
+      !enddo
         
     endif ; enddo ! end of i loop
+
 !=========================
 
 !   One option is to have the wind stress applied as a body force
@@ -736,6 +754,69 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     endif
   enddo ! end of v-component J loop
 
+!=======Luwei's interpolation part==============================
+  ! Interpolate lw_epsilon_u(I,j,k) to lw_epsilon_ut(i,j,k)
+  ! Interpolate lw_epsilon_lay_u(I,j,k) to lw_epsilon_lay_ut(i,j,k)
+  do k = 1,nz
+    do j = G%jsc,G%jec
+      do I = Isq+1,Ieq
+        if (lw_epsilon_u(I,j,k)>0 .and. lw_epsilon_u(I-1,j,k)>0) then
+          lw_epsilon_ut(i,j,k) = 0.5 * (lw_epsilon_u(I,j,k) + lw_epsilon_u(I-1,j,k))
+        endif
+        if (lw_epsilon_lay_u(I,j,k)>0 .and. lw_epsilon_lay_u(I-1,j,k)>0) then
+          lw_epsilon_lay_ut(i,j,k) = 0.5 * (lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_u(I-1,j,k))
+        endif
+      enddo
+    enddo
+  enddo  
+  ! Interpolate lw_TKE_u(I,j) to lw_TKE_ut(i,j) 
+  do j = G%jsc,G%jec
+    do I = Isq+1,Ieq
+      lw_TKE_ut(i,j) = 0.5 * (lw_TKE_u(I,j) + lw_TKE_u(I-1,j))
+    enddo
+  enddo
+ 
+  ! Interpolate lw_epsilon_v(i,J,k) to lw_epsilon_vt(i,j,k)
+  ! Interpolate lw_epsilon_lay_v(i,J,k) to lw_epsilon_lay_vt(i,j,k)
+  do k = 1,nz
+    do i = is,ie
+      do J = Jsq+1,Jeq
+        if (lw_epsilon_v(i,J,k)>0 .and. lw_epsilon_v(i,J-1,k)>0) then
+          lw_epsilon_vt(i,j,k) = 0.5 * (lw_epsilon_v(i,J,k) + lw_epsilon_v(i,J-1,k))
+        endif
+        if (lw_epsilon_lay_v(i,J,k)>0 .and. lw_epsilon_lay_v(i,J-1,k)>0) then
+          lw_epsilon_lay_vt(i,j,k) = 0.5 * (lw_epsilon_lay_v(i,J,k) + lw_epsilon_lay_v(i,J-1,k))
+        endif
+      enddo
+    enddo
+  enddo
+
+  ! Interpolate lw_TKE_v(i,J) to lw_TKE_vt(i,j) 
+  do i = is,ie
+    do J = Jsq+1,Jeq
+      lw_TKE_vt(i,j) = 0.5 * (lw_TKE_v(i,J) + lw_TKE_v(i,J-1))
+    enddo
+  enddo
+
+  ! Add lw_epsilon_ut and lw_epsilon_vt  
+  do k = 1,nz
+    do i = is,ie
+      do j = G%jsc,G%jec
+        lw_epsilon(i,j,k) = lw_epsilon_ut(i,j,k) + lw_epsilon_vt(i,j,k)
+        visc%lw_epsilon_lay(i,j,k) = lw_epsilon_lay_ut(i,j,k) + lw_epsilon_lay_vt(i,j,k)
+      enddo
+    enddo
+  enddo
+
+  ! Add lw_TKE_ut and lw_TKE_vt
+  do i = is,ie
+    do j = G%jsc,G%jec
+      lw_TKE(i,j) = lw_TKE_ut(i,j) + lw_TKE_vt(i,j)
+    enddo
+  enddo
+
+!=======Luwei's interpolation part==============================
+ 
   call vertvisc_limit_vel(u, v, h, ADp, CDp, fluxes, visc, dt, G, GV, CS)
 
   ! Here the velocities associated with open boundary conditions are applied.
@@ -777,7 +858,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   if (CS%id_lw_epsilon > 0) &
     call post_data(CS%id_lw_epsilon, lw_epsilon, CS%diag)
   if (CS%id_lw_epsilon_lay > 0) &
-    call post_data(CS%id_lw_epsilon_lay, lw_epsilon_lay, CS%diag)
+    call post_data(CS%id_lw_epsilon_lay, visc%lw_epsilon_lay, CS%diag)
   if (CS%id_lw_TKE > 0) &
     call post_data(CS%id_lw_TKE, lw_TKE, CS%diag)
 
@@ -1914,7 +1995,7 @@ diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking','W kg-1')
 diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking in each layer','m3 s-3')
 
   CS%id_lw_TKE = register_diag_field('ocean_model', 'lw_TKE', &
-diag%axesTL, Time, 'Bottom energy flux into lee waves','m3 s-3')
+diag%axesT1, Time, 'Bottom energy flux into lee waves','m3 s-3')
 
   if ((len_trim(CS%u_trunc_file) > 0) .or. (len_trim(CS%v_trunc_file) > 0)) &
     call PointAccel_init(MIS, Time, G, param_file, diag, dirs, CS%PointAccel_CSp)
