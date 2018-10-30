@@ -781,8 +781,13 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
 
       !TKE_Yang(i,j,k) = 1.e-8
       TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
-
-      Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k)
+      
+      Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k) ! weird that TKE_to_Kd is not
+!dependent on j
+      
+      !write(*,*) '----------------------'
+      !write(*,*) k,visc%lw_epsilon_lay(i,j,k),TKE_Yang(i,j,k)
+      !write(*,*) TKE_to_Kd(i,k), Kd_add
 
       if (CS%Kd_max >= 0.0) Kd_add = min(Kd_add, CS%Kd_max)
         Kd(i,j,k) = Kd(i,j,k) + Kd_add
