@@ -4,9 +4,9 @@
 !* Register                      L3034-3035
 !* Declare variables             L463- 465
 !* Key calculation               L780- 796
-
-
-
+!* On 31 October 2018 Correct TKE_to_Kd, TKE_Yang and Kd_Yang
+!* TKE_to_Kd move it out         L3048, L897
+!* Vertical position - layers    L3045, L3048
 
 
 
@@ -460,8 +460,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   real :: epsilon
 
 !==== Luwei Yang =====
-  real :: TKE_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)  ! Temporary lee wave energy dissipation (W/kg)
-  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G)+1)  ! Lee wave diffusivity (m2/s)
+  real :: TKE_Yang(SZI_(G),SZJ_(G),SZK_(G))  ! Temporary lee wave energy dissipation (W/kg)
+  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G))  ! Lee wave diffusivity (m2/s) layer, not interface
   real :: Kd_add
 !=====================
 
@@ -776,8 +776,10 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
     if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. CS%Lowmode_itidal_dissipation) &
       call add_int_tide_diffusivity(h, N2_bot, j, TKE_to_Kd, maxTKE, G, GV, CS, &
                                     dd, N2_lay, Kd, Kd_int)
-!==== Luwei Yang ============== 
-    do k=1,nz+1 ; do i=is,ie
+!==== Luwei Yang ==============
+    do i=is,ie; TKE_Yang(i,j,1) = visc%lw_epsilon_lay(i,j,1); enddo
+ 
+    do k=2,nz ; do i=is,ie
 
       !TKE_Yang(i,j,k) = 1.e-8
       TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
@@ -786,15 +788,17 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
 !dependent on j
       
       !write(*,*) '----------------------'
-      !write(*,*) k,visc%lw_epsilon_lay(i,j,k),TKE_Yang(i,j,k)
+      !write(*,*) j,k,i,TKE_Yang(i,j,k)
       !write(*,*) TKE_to_Kd(i,k), Kd_add
 
-      if (CS%Kd_max >= 0.0) Kd_add = min(Kd_add, CS%Kd_max)
+      if (CS%Kd_max >= 0.0) then 
+        Kd_add = min(Kd_add, CS%Kd_max)
         Kd(i,j,k) = Kd(i,j,k) + Kd_add
+      endif
 
       if (present(Kd_int)) then
-        Kd_int(i,j,K)   = Kd_int(i,j,K)   + 0.5*Kd_add
-        Kd_int(i,j,K+1) = Kd_int(i,j,K+1) + 0.5*Kd_add
+        Kd_int(i,j,K-1)   = Kd_int(i,j,K-1)   + 0.5*Kd_add
+        Kd_int(i,j,K) = Kd_int(i,j,K) + 0.5*Kd_add
       endif
 
       Kd_Yang(i,j,k) = Kd_add
@@ -890,6 +894,7 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   if (CS%id_Kd_layer > 0) call post_data(CS%id_Kd_layer, Kd, CS%diag)
 
   if (CS%id_Kd_Yang  > 0) call post_data(CS%id_Kd_Yang, Kd_Yang, CS%diag)
+  if (CS%id_TKE_to_Kd > 0) call post_data(CS%id_TKE_to_Kd, dd%TKE_to_Kd, CS%diag)
 
   num_z_diags = 0
   if (CS%Int_tide_dissipation .or. CS%Lee_wave_dissipation .or. CS%Lowmode_itidal_dissipation) then
@@ -3037,8 +3042,11 @@ subroutine set_diffusivity_init(Time, G, GV, param_file, diag, CS, diag_to_Z_CSp
   CS%id_Kd_layer = register_diag_field('ocean_model', 'Kd_layer', diag%axesTL, Time, &
       'Diapycnal diffusivity of layers (as set)', 'meter2 second-1')
 
-  CS%id_Kd_Yang = register_diag_field('ocean_model','Kd_Yang',diag%axesTi,Time, &
+  CS%id_Kd_Yang = register_diag_field('ocean_model','Kd_Yang',diag%axesTL,Time, &
       'Lee Wave Driven Diffusivity derived from energy dissipation rate', 'meter2 sec-1')
+
+  CS%id_TKE_to_Kd = register_diag_field('ocean_model','TKE_to_Kd',diag%axesTL,Time, &
+           'Convert TKE to Kd', 'second2 meter')
 
   if (CS%Lee_wave_dissipation) then
 
