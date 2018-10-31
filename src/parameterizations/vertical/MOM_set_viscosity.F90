@@ -1840,7 +1840,7 @@ subroutine set_visc_init(Time, G, GV, param_file, diag, visc, CS)
   CS%Hbbl = CS%Hbbl * GV%m_to_H
   CS%BBL_thick_min = CS%BBL_thick_min * GV%m_to_H
 
-  allocate(visc%lw_epsilon_lay(isd:ied,jsd:jed,nz+1)) ; visc%lw_epsilon_lay(:,:,:) = 0.0
+  allocate(visc%lw_epsilon_lay(isd:ied,jsd:jed,nz)) ; visc%lw_epsilon_lay(:,:,:) = 0.0
 
 
 end subroutine set_visc_init
