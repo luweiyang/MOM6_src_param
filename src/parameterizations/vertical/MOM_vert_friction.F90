@@ -355,7 +355,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_epsilon_lay_ut(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer u component interpolated to tracer points
   real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component
   real :: lw_epsilon_lay_vt(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component interpolated to tracer points
-  real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer total tracer points
+  !real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer total tracer points
 !total (ut + vt), a scalar
 
   real :: lw_TKE_u(SZIB_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component, in m3 s-3.
@@ -400,7 +400,6 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   lw_epsilon(:,:,:) = 0.0
   lw_epsilon_lay_u(:,:,:) = 0.0;  lw_epsilon_lay_v(:,:,:) = 0.0
   lw_epsilon_lay_ut(:,:,:) = 0.0; lw_epsilon_lay_vt(:,:,:) = 0.0
-  lw_epsilon_lay(:,:,:) = 0.0 
   lw_TKE_u(:,:) = 1.e-20;         lw_TKE_v(:,:) = 1.e-20
   lw_TKE_ut(:,:) = 1.e-20;        lw_TKE_vt(:,:) = 1.e-20
   lw_TKE(:,:) = 1.e-20  
@@ -758,8 +757,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   ! Interpolate lw_epsilon_u(I,j,k) to lw_epsilon_ut(i,j,k)
   ! Interpolate lw_epsilon_lay_u(I,j,k) to lw_epsilon_lay_ut(i,j,k)
   do k = 1,nz
-    do j = G%jsc,G%jec
-      do I = Isq+1,Ieq
+    do j = G%jsc-1,G%jec+1
+      do I = Isq-1,Ieq+1
         if (lw_epsilon_u(I,j,k)>0 .and. lw_epsilon_u(I-1,j,k)>0) then
           lw_epsilon_ut(i,j,k) = 0.5 * (lw_epsilon_u(I,j,k) + lw_epsilon_u(I-1,j,k))
         endif
@@ -770,8 +769,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     enddo
   enddo  
   ! Interpolate lw_TKE_u(I,j) to lw_TKE_ut(i,j) 
-  do j = G%jsc,G%jec
-    do I = Isq+1,Ieq
+  do j = G%jsc-1,G%jec+1
+    do I = Isq-1,Ieq+1
       lw_TKE_ut(i,j) = 0.5 * (lw_TKE_u(I,j) + lw_TKE_u(I-1,j))
     enddo
   enddo
@@ -779,8 +778,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   ! Interpolate lw_epsilon_v(i,J,k) to lw_epsilon_vt(i,j,k)
   ! Interpolate lw_epsilon_lay_v(i,J,k) to lw_epsilon_lay_vt(i,j,k)
   do k = 1,nz
-    do i = is,ie
-      do J = Jsq+1,Jeq
+    do i = is-1,ie+1
+      do J = Jsq-1,Jeq+1
         if (lw_epsilon_v(i,J,k)>0 .and. lw_epsilon_v(i,J-1,k)>0) then
           lw_epsilon_vt(i,j,k) = 0.5 * (lw_epsilon_v(i,J,k) + lw_epsilon_v(i,J-1,k))
         endif
@@ -792,16 +791,16 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo
 
   ! Interpolate lw_TKE_v(i,J) to lw_TKE_vt(i,j) 
-  do i = is,ie
-    do J = Jsq+1,Jeq
+  do i = is-1,ie+1
+    do J = Jsq-1,Jeq+1
       lw_TKE_vt(i,j) = 0.5 * (lw_TKE_v(i,J) + lw_TKE_v(i,J-1))
     enddo
   enddo
 
   ! Add lw_epsilon_ut and lw_epsilon_vt  
   do k = 1,nz
-    do i = is,ie
-      do j = G%jsc,G%jec
+    do i = is-1,ie+1
+      do j = G%jsc-1,G%jec+1
         lw_epsilon(i,j,k) = lw_epsilon_ut(i,j,k) + lw_epsilon_vt(i,j,k)
         visc%lw_epsilon_lay(i,j,k) = lw_epsilon_lay_ut(i,j,k) + lw_epsilon_lay_vt(i,j,k)
       enddo
@@ -809,8 +808,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo
 
   ! Add lw_TKE_ut and lw_TKE_vt
-  do i = is,ie
-    do j = G%jsc,G%jec
+  do i = is-1,ie+1
+    do j = G%jsc-1,G%jec+1
       lw_TKE(i,j) = lw_TKE_ut(i,j) + lw_TKE_vt(i,j)
     enddo
   enddo
