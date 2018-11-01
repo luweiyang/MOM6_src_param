@@ -794,6 +794,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   enddo
   call cpu_clock_end(id_clock_mom_update)
 
+  call do_group_pass(CS%pass_uv, G%Domain)
+
   if (CS%debug) then
     call uchksum(u,"Corrector 1 u",G%HI,haloshift=0)
     call vchksum(v,"Corrector 1 v",G%HI,haloshift=0)
