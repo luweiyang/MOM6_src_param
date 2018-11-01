@@ -419,8 +419,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
   do k=1,nz ; do i=Isq,Ieq ; Ray(i,k) = 0.0 ; enddo ; enddo
    
-  do j=G%jsc,G%jec 
-    do i=is,ie;  
+  do j=G%jsc-1,G%jec+1 
+    do i=is-1,ie+1;  
       h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
     enddo
   enddo
@@ -435,10 +435,10 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !$OMP                     firstprivate(Ray)                                    &
 !$OMP                          private(do_i,surface_stress,zDS,stress,h_a,hfr, &
 !$OMP                                     b_denom_1,b1,d1,c1)
-  do j=G%jsc,G%jec
-    do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
+  do j=G%jsc-1,G%jec+1
+    do I=Isq-1,Ieq+1 ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
-    if (ASSOCIATED(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq,Ieq
+    if (ASSOCIATED(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq-1,Ieq+1
       ADp%du_dt_visc(I,j,k) = u(I,j,k)
     enddo ; enddo ; endif
 
@@ -452,7 +452,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
  
     kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
 !topography, in m-1.
-    do I=Isq,Ieq ; if (do_i(I)) then
+    do I=Isq-1,Ieq+1 ; if (do_i(I)) then
         
       N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
       !write(*,*) j, I, N_bot_temporary
@@ -610,10 +610,10 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !$OMP                     firstprivate(Ray)                                    &
 !$OMP                          private(do_i,surface_stress,zDS,stress,h_a,hfr, &
 !$OMP                                  b_denom_1,b1,d1,c1)
-  do J=Jsq,Jeq
-    do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
+  do J=Jsq-1,Jeq+1
+    do i=is-1,ie+1 ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
-    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
+    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is-1,ie+1
       ADp%dv_dt_visc(i,J,k) = v(i,J,k)
     enddo ; enddo ; endif
 
@@ -625,7 +625,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     !decay_scale = 5.
     decay_depth = 500.
      
-    do i=is,ie; if (do_i(i)) then
+    do i=is-1,ie+1; if (do_i(i)) then
         
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
