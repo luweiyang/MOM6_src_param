@@ -199,7 +199,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
   G_Rho0 = GV%g_Earth / GV%Rho0
 
   ! Find the (limited) density jump across each interface.
-  do i=is-1,ie+1
+  do i=is-1,ie
     dRho_int(i,1) = 0.0 ; dRho_int(i,nz+1) = 0.0
   enddo
 !$OMP parallel do default(none) shared(is,ie,js,je,nz,tv,fluxes,G,GV,h,T_f,S_f, &
@@ -208,7 +208,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
 !$OMP                                  hb,dRho_bot,z_from_bot,do_i,h_amp,       &
 !$OMP                                  do_any,dz_int) &
 !$OMP                     firstprivate(dRho_int)
-  do j=js-1,je+1
+  do j=js-1,je
     if (associated(tv%eqn_of_state)) then
       if (associated(fluxes%p_surf)) then
         do i=is,ie ; pres(i) = fluxes%p_surf(i,j) ; enddo
@@ -216,26 +216,26 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
         do i=is,ie ; pres(i) = 0.0 ; enddo
       endif
       do K=2,nz
-        do i=is-1,ie+1
+        do i=is-1,ie
           pres(i) = pres(i) + GV%H_to_Pa*h(i,j,k-1)
           Temp_Int(i) = 0.5 * (T_f(i,j,k) + T_f(i,j,k-1))
           Salin_Int(i) = 0.5 * (S_f(i,j,k) + S_f(i,j,k-1))
         enddo
         call calculate_density_derivs(Temp_int, Salin_int, pres, &
                  dRho_dT(:), dRho_dS(:), is, ie-is+1, tv%eqn_of_state)
-        do i=is-1,ie+1
+        do i=is-1,ie
           dRho_int(i,K) = max(dRho_dT(i)*(T_f(i,j,k) - T_f(i,j,k-1)) + &
                               dRho_dS(i)*(S_f(i,j,k) - S_f(i,j,k-1)), 0.0)
         enddo
       enddo
     else
-      do K=2,nz ; do i=is-1,ie+1
+      do K=2,nz ; do i=is-1,ie
         dRho_int(i,K) = GV%Rlay(k) - GV%Rlay(k-1)
       enddo ; enddo
     endif
 
     ! Find the bottom boundary layer stratification.
-    do i=is-1,ie+1
+    do i=is-1,ie
       hb(i) = 0.0 ; dRho_bot(i) = 0.0
       z_from_bot(i) = 0.5*GV%H_to_m*h(i,j,nz)
       do_i(i) = (G%mask2dT(i,j) > 0.5)
@@ -244,7 +244,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
 
     do k=nz,2,-1
       do_any = .false.
-      do i=is-1,ie+1 ; if (do_i(i)) then
+      do i=is-1,ie ; if (do_i(i)) then
         dz_int = 0.5*GV%H_to_m*(h(i,j,k) + h(i,j,k-1))
         z_from_bot(i) = z_from_bot(i) + dz_int ! middle of the layer above
 
@@ -265,7 +265,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
       if (.not.do_any) exit
     enddo
 
-    do i=is-1,ie+1
+    do i=is-1,ie
       if (hb(i) > 0.0) then
         N2_bot(i,j) = (G_Rho0 * dRho_bot(i)) / hb(i)
       else ;  N2_bot(i,j) = 0.0 ; endif
@@ -394,6 +394,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   is = G%isc ; ie = G%iec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = G%ke
 
+  N2_bot(:,:) = -5.e2
   lw_body_force_u(:,:,:) = 0.0 ;  lw_body_force_v(:,:,:) = 0.0
   lw_epsilon_u(:,:,:) = 0.0 ;     lw_epsilon_v(:,:,:) = 0.0
   lw_epsilon_ut(:,:,:) = 0.0 ;    lw_epsilon_vt(:,:,:) = 0.0
@@ -419,14 +420,6 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
   do k=1,nz ; do i=Isq,Ieq ; Ray(i,k) = 0.0 ; enddo ; enddo
    
-  do j=G%jsc-1,G%jec+1 
-    do i=is-1,ie+1;  
-      h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
-    enddo
-  enddo
-
-  call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
-
   !   Update the zonal velocity component using a modification of a standard
   ! tridagonal solver.
 !$OMP parallel do default(none) shared(G,Isq,Ieq,ADp,nz,u,CS,dt_Rho0,fluxes,h, &
@@ -435,87 +428,12 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !$OMP                     firstprivate(Ray)                                    &
 !$OMP                          private(do_i,surface_stress,zDS,stress,h_a,hfr, &
 !$OMP                                     b_denom_1,b1,d1,c1)
-  do j=G%jsc-1,G%jec+1
-    do I=Isq-1,Ieq+1 ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
+  do j=G%jsc,G%jec
+    do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
-    if (ASSOCIATED(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq-1,Ieq+1
+    if (ASSOCIATED(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq,Ieq
       ADp%du_dt_visc(I,j,k) = u(I,j,k)
     enddo ; enddo ; endif
-
-!=========================
-! Luwei's Lee Wave Parameterisation - u(I,j,k) component
-
-    !write(*,*) '--------u component--------'
-
-    !decay_scale = 5.
-    decay_depth = 500. ! Could also be forumlated as a fucntion of U/N.
- 
-    kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
-!topography, in m-1.
-    do I=Isq-1,Ieq+1 ; if (do_i(I)) then
-        
-      N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
-      !write(*,*) j, I, N_bot_temporary
-
-      lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
-
-      H_z_u(1) = CS%h_u(I,j,1)
-      H_total_u(I,j) = CS%h_u(I,j,1)
-      do k_u = 2,nz
-
-        if (CS%h_u(I,j,k_u) < 1.0) then
-          exit
-        endif
-
-        H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
-        H_z_u(k_u) = H_total_u(I,j)
-          
-      enddo
-       
-      if (H_total_u(I,j) < 1000.0) then
-        lw_stress_u(I,j) = 0.0
-      elseif (H_total_u(I,j) > 1000.0) then 
-        lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
-      endif
-
-      lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
-      vert_structure_numer_sum = 0.0
-
-      do k = 1,k_u-1 ! k_u -1 is the last level above topography
-
-        !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
-        !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
-        vert_structure_numer(k) = exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)  
-        vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
-      enddo
-
-      dummy = 0.0
-
-      do k = 1,k_u-1
-        vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
-        dummy = dummy + vert_structure_u
-
-        lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
-        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k))
-        lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) 
-        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
-
-        !write(*,*) 'u-----------u-------------'
-        !write(*,*) k, CS%h_u(I,j,k), lw_epsilon_u(I,j,k), lw_epsilon_lay_u(I,j,k)
- 
-      enddo
-
-      if (k_u-1 < nz) then
-        do k = k_u,nz
-          lw_body_force_u(I,j,k) = 0.0
-          lw_epsilon_u(I,j,k) = 0.0
-          lw_epsilon_lay_u(I,j,k) = 0.0
-        enddo
-      endif
-        
-    endif ; enddo ! end of i loop
-
-!=========================
 
 !   One option is to have the wind stress applied as a body force
 ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
@@ -602,6 +520,92 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     endif
   enddo ! end u-component j loop
 
+!=========================
+! Luwei's Lee Wave Parameterisation - u(I,j,k) component
+
+  do j=G%jsc-1,G%jec 
+    do i=is-1,ie;  
+      h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
+    enddo
+  enddo
+
+  call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
+
+  do j=G%jsc-1,G%jec
+    do I=Isq-1,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
+
+    !write(*,*) '--------u component--------'
+
+    !decay_scale = 5.
+    decay_depth = 500. ! Could also be forumlated as a fucntion of U/N.
+ 
+    kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
+!topography, in m-1.
+    do I=Isq-1,Ieq ; if (do_i(I)) then
+        
+      N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
+      !write(*,*) j, I, N_bot_temporary
+
+      lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
+
+      H_z_u(1) = CS%h_u(I,j,1)
+      H_total_u(I,j) = CS%h_u(I,j,1)
+      do k_u = 2,nz
+
+        if (CS%h_u(I,j,k_u) < 1.0) then
+          exit
+        endif
+
+        H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
+        H_z_u(k_u) = H_total_u(I,j)
+          
+      enddo
+       
+      if (H_total_u(I,j) < 1000.0) then
+        lw_stress_u(I,j) = 0.0
+      elseif (H_total_u(I,j) > 1000.0) then 
+        lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
+      endif
+
+      lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
+      vert_structure_numer_sum = 0.0
+
+      do k = 1,k_u-1 ! k_u -1 is the last level above topography
+
+        !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
+        !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
+        vert_structure_numer(k) = exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)  
+        vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+      enddo
+
+      dummy = 0.0
+
+      do k = 1,k_u-1
+        vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
+        dummy = dummy + vert_structure_u
+
+        lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
+        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k))
+        lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) 
+        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
+
+        !write(*,*) 'u-----------u-------------'
+        !write(*,*) k, CS%h_u(I,j,k), lw_epsilon_u(I,j,k), lw_epsilon_lay_u(I,j,k)
+ 
+      enddo
+
+      if (k_u-1 < nz) then
+        do k = k_u,nz
+          lw_body_force_u(I,j,k) = 0.0
+          lw_epsilon_u(I,j,k) = 0.0
+          lw_epsilon_lay_u(I,j,k) = 0.0
+        enddo
+      endif
+        
+    endif ; enddo ! end of i loop
+  enddo ! end u-component j loop
+!=========================
+
 
   ! Now work on the meridional velocity component.
 !$OMP parallel do default(none) shared(G,Jsq,Jeq,ADp,nz,v,CS,dt_Rho0,fluxes,h, &
@@ -610,22 +614,84 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !$OMP                     firstprivate(Ray)                                    &
 !$OMP                          private(do_i,surface_stress,zDS,stress,h_a,hfr, &
 !$OMP                                  b_denom_1,b1,d1,c1)
-  do J=Jsq-1,Jeq+1
-    do i=is-1,ie+1 ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
+  do J=Jsq,Jeq
+    do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
-    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is-1,ie+1
+    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
       ADp%dv_dt_visc(i,J,k) = v(i,J,k)
     enddo ; enddo ; endif
 
+!   One option is to have the wind stress applied as a body force
+! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
+! the wind stress is applied as a stress boundary condition.
+    if (CS%direct_stress) then
+      do i=is,ie ; if (do_i(i)) then
+        surface_stress(i) = 0.0
+        zDS = 0.0
+        stress = dt_Rho0 * fluxes%tauy(i,J)
+        do k=1,nz
+          h_a = 0.5 * (h(i,J,k) + h(i,J+1,k))
+          hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
+          v(i,J,k) = v(i,J,k) + I_Hmix * hfr * stress
+          zDS = zDS + h_a ; if (zDS >= Hmix) exit
+        enddo
+      endif ; enddo ! end of i loop
+    else ; do i=is,ie
+      surface_stress(i) = dt_Rho0 * (G%mask2dCv(i,J)*fluxes%tauy(i,J))
+    enddo ; endif ! direct_stress
+
+    if (CS%Channel_drag) then ; do k=1,nz ; do i=is,ie
+      Ray(i,k) = visc%Ray_v(i,J,k)
+    enddo ; enddo ; endif
+
+    do i=is,ie ; if (do_i(i)) then
+      b_denom_1 = CS%h_v(i,J,1) + dt_m_to_H * (Ray(i,1) + CS%a_v(i,J,1))
+      b1(i) = 1.0 / (b_denom_1 + dt_m_to_H*CS%a_v(i,J,2))
+      d1(i) = b_denom_1 * b1(i)
+      v(i,J,1) = b1(i) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i))
+    endif ; enddo
+    do k=2,nz ; do i=is,ie ; if (do_i(i)) then
+      c1(i,k) = dt_m_to_H * CS%a_v(i,J,K) * b1(i)
+      b_denom_1 = CS%h_v(i,J,k) + dt_m_to_H *  (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
+      b1(i) = 1.0 / (b_denom_1 + dt_m_to_H * CS%a_v(i,J,K+1))
+      d1(i) = b_denom_1 * b1(i)
+      v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt_m_to_H * &
+                  CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i)
+    endif ; enddo ; enddo
+    do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
+      v(i,J,k) = v(i,J,k) + c1(i,k+1) * v(i,J,k+1)
+    endif ; enddo ; enddo ! i and k loops
+
+    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
+      ADp%dv_dt_visc(i,J,k) = (v(i,J,k) - ADp%dv_dt_visc(i,J,k))*Idt
+    enddo ; enddo ; endif
+
+    if (ASSOCIATED(visc%tauy_shelf)) then ; do i=is,ie
+      visc%tauy_shelf(i,J) = -Rho0*CS%a1_shelf_v(i,J)*v(i,J,1) ! - v_shelf?
+    enddo ; endif
+
+    if (present(tauy_bot)) then
+      do i=is,ie
+        tauy_bot(i,J) = Rho0 * (v(i,J,nz)*CS%a_v(i,J,nz+1))
+      enddo
+      if (CS%Channel_drag) then ; do k=1,nz ; do i=is,ie
+        tauy_bot(i,J) = tauy_bot(i,J) + Rho0 * (Ray(i,k)*v(i,J,k))
+      enddo ; enddo ; endif
+    endif
+  enddo ! end of v-component J loop
+
 !=========================
 ! Luwei's Lee Wave Parameterisation - v(i,J,k) component
+
+  do J=Jsq-1,Jeq
+    do i=is-1,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
     !write(*,*) '--------v component--------'
 
     !decay_scale = 5.
     decay_depth = 500.
      
-    do i=is-1,ie+1; if (do_i(i)) then
+    do i=is-1,ie; if (do_i(i)) then
         
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
@@ -691,86 +757,28 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       !enddo
         
     endif ; enddo ! end of i loop
-
-!=========================
-
-!   One option is to have the wind stress applied as a body force
-! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
-! the wind stress is applied as a stress boundary condition.
-    if (CS%direct_stress) then
-      do i=is,ie ; if (do_i(i)) then
-        surface_stress(i) = 0.0
-        zDS = 0.0
-        stress = dt_Rho0 * fluxes%tauy(i,J)
-        do k=1,nz
-          h_a = 0.5 * (h(i,J,k) + h(i,J+1,k))
-          hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
-          v(i,J,k) = v(i,J,k) + I_Hmix * hfr * stress
-          zDS = zDS + h_a ; if (zDS >= Hmix) exit
-        enddo
-      endif ; enddo ! end of i loop
-    else ; do i=is,ie
-      surface_stress(i) = dt_Rho0 * (G%mask2dCv(i,J)*fluxes%tauy(i,J))
-    enddo ; endif ! direct_stress
-
-    if (CS%Channel_drag) then ; do k=1,nz ; do i=is,ie
-      Ray(i,k) = visc%Ray_v(i,J,k)
-    enddo ; enddo ; endif
-
-    do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) + dt_m_to_H * (Ray(i,1) + CS%a_v(i,J,1))
-      b1(i) = 1.0 / (b_denom_1 + dt_m_to_H*CS%a_v(i,J,2))
-      d1(i) = b_denom_1 * b1(i)
-      v(i,J,1) = b1(i) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i))
-    endif ; enddo
-    do k=2,nz ; do i=is,ie ; if (do_i(i)) then
-      c1(i,k) = dt_m_to_H * CS%a_v(i,J,K) * b1(i)
-      b_denom_1 = CS%h_v(i,J,k) + dt_m_to_H *  (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
-      b1(i) = 1.0 / (b_denom_1 + dt_m_to_H * CS%a_v(i,J,K+1))
-      d1(i) = b_denom_1 * b1(i)
-      v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt_m_to_H * &
-                  CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i)
-    endif ; enddo ; enddo
-    do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
-      v(i,J,k) = v(i,J,k) + c1(i,k+1) * v(i,J,k+1)
-    endif ; enddo ; enddo ! i and k loops
-
-    if (ASSOCIATED(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
-      ADp%dv_dt_visc(i,J,k) = (v(i,J,k) - ADp%dv_dt_visc(i,J,k))*Idt
-    enddo ; enddo ; endif
-
-    if (ASSOCIATED(visc%tauy_shelf)) then ; do i=is,ie
-      visc%tauy_shelf(i,J) = -Rho0*CS%a1_shelf_v(i,J)*v(i,J,1) ! - v_shelf?
-    enddo ; endif
-
-    if (present(tauy_bot)) then
-      do i=is,ie
-        tauy_bot(i,J) = Rho0 * (v(i,J,nz)*CS%a_v(i,J,nz+1))
-      enddo
-      if (CS%Channel_drag) then ; do k=1,nz ; do i=is,ie
-        tauy_bot(i,J) = tauy_bot(i,J) + Rho0 * (Ray(i,k)*v(i,J,k))
-      enddo ; enddo ; endif
-    endif
   enddo ! end of v-component J loop
+!=========================
 
 !=======Luwei's interpolation part==============================
   ! Interpolate lw_epsilon_u(I,j,k) to lw_epsilon_ut(i,j,k)
   ! Interpolate lw_epsilon_lay_u(I,j,k) to lw_epsilon_lay_ut(i,j,k)
   do k = 1,nz
-    do j = G%jsc-1,G%jec+1
-      do I = Isq-1,Ieq+1
-        if (lw_epsilon_u(I,j,k)>0 .and. lw_epsilon_u(I-1,j,k)>0) then
-          lw_epsilon_ut(i,j,k) = 0.5 * (lw_epsilon_u(I,j,k) + lw_epsilon_u(I-1,j,k))
-        endif
-        if (lw_epsilon_lay_u(I,j,k)>0 .and. lw_epsilon_lay_u(I-1,j,k)>0) then
-          lw_epsilon_lay_ut(i,j,k) = 0.5 * (lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_u(I-1,j,k))
-        endif
+    do j = G%jsc,G%jec
+      do I = Isq,Ieq
+        !if (lw_epsilon_u(I,j,k)>0 .and. lw_epsilon_u(I-1,j,k)>0) then
+        lw_epsilon_ut(i,j,k) = 0.5 * (lw_epsilon_u(I,j,k) + lw_epsilon_u(I-1,j,k))
+        !endif
+        !if (lw_epsilon_lay_u(I,j,k)>0 .and. lw_epsilon_lay_u(I-1,j,k)>0) then
+        lw_epsilon_lay_ut(i,j,k) = 0.5 * (lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_u(I-1,j,k))
+        !endif
       enddo
     enddo
-  enddo  
+  enddo 
+ 
   ! Interpolate lw_TKE_u(I,j) to lw_TKE_ut(i,j) 
-  do j = G%jsc-1,G%jec+1
-    do I = Isq-1,Ieq+1
+  do j = G%jsc,G%jec
+    do I = Isq,Ieq
       lw_TKE_ut(i,j) = 0.5 * (lw_TKE_u(I,j) + lw_TKE_u(I-1,j))
     enddo
   enddo
@@ -778,29 +786,29 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   ! Interpolate lw_epsilon_v(i,J,k) to lw_epsilon_vt(i,j,k)
   ! Interpolate lw_epsilon_lay_v(i,J,k) to lw_epsilon_lay_vt(i,j,k)
   do k = 1,nz
-    do i = is-1,ie+1
-      do J = Jsq-1,Jeq+1
-        if (lw_epsilon_v(i,J,k)>0 .and. lw_epsilon_v(i,J-1,k)>0) then
-          lw_epsilon_vt(i,j,k) = 0.5 * (lw_epsilon_v(i,J,k) + lw_epsilon_v(i,J-1,k))
-        endif
-        if (lw_epsilon_lay_v(i,J,k)>0 .and. lw_epsilon_lay_v(i,J-1,k)>0) then
-          lw_epsilon_lay_vt(i,j,k) = 0.5 * (lw_epsilon_lay_v(i,J,k) + lw_epsilon_lay_v(i,J-1,k))
-        endif
+    do i = is,ie
+      do J = Jsq,Jeq
+        !if (lw_epsilon_v(i,J,k)>0 .and. lw_epsilon_v(i,J-1,k)>0) then
+        lw_epsilon_vt(i,j,k) = 0.5 * (lw_epsilon_v(i,J,k) + lw_epsilon_v(i,J-1,k))
+        !endif
+        !if (lw_epsilon_lay_v(i,J,k)>0 .and. lw_epsilon_lay_v(i,J-1,k)>0) then
+        lw_epsilon_lay_vt(i,j,k) = 0.5 * (lw_epsilon_lay_v(i,J,k) + lw_epsilon_lay_v(i,J-1,k))
+        !endif
       enddo
     enddo
   enddo
 
   ! Interpolate lw_TKE_v(i,J) to lw_TKE_vt(i,j) 
-  do i = is-1,ie+1
-    do J = Jsq-1,Jeq+1
+  do i = is,ie
+    do J = Jsq,Jeq
       lw_TKE_vt(i,j) = 0.5 * (lw_TKE_v(i,J) + lw_TKE_v(i,J-1))
     enddo
   enddo
 
   ! Add lw_epsilon_ut and lw_epsilon_vt  
   do k = 1,nz
-    do i = is-1,ie+1
-      do j = G%jsc-1,G%jec+1
+    do i = is,ie
+      do j = G%jsc,G%jec
         lw_epsilon(i,j,k) = lw_epsilon_ut(i,j,k) + lw_epsilon_vt(i,j,k)
         visc%lw_epsilon_lay(i,j,k) = lw_epsilon_lay_ut(i,j,k) + lw_epsilon_lay_vt(i,j,k)
       enddo
@@ -808,8 +816,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo
 
   ! Add lw_TKE_ut and lw_TKE_vt
-  do i = is-1,ie+1
-    do j = G%jsc-1,G%jec+1
+  do i = is,ie
+    do j = G%jsc,G%jec
       lw_TKE(i,j) = lw_TKE_ut(i,j) + lw_TKE_vt(i,j)
     enddo
   enddo
@@ -1075,7 +1083,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
 !$OMP                          private(do_i,kv_bbl,bbl_thick,z_i,h_harm,h_arith,hvel,z2,   &
 !$OMP                                  botfn,zh,Dmin,zcol,a,do_any_shelf,do_i_shelf,       &
 !$OMP                                  a_shelf,Ztop_min,I_HTbl,hvel_shelf,topfn,h_ml,z2_wt)
-  do j=G%Jsc,G%Jec
+  do j=G%Jsc-1,G%Jec
     do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
     if (CS%bottomdraglaw) then ; do I=Isq,Ieq
@@ -1194,7 +1202,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
       elseif (do_i(I)) then
         CS%a_u(I,j,K) = a(I,K)
       endif ; enddo ; enddo
-      do k=1,nz ; do I=Isq,Ieq ; if (do_i_shelf(I)) then
+      do k=1,nz ; do I=Isq-1,Ieq ; if (do_i_shelf(I)) then
         ! Should we instead take the inverse of the average of the inverses?
         CS%h_u(I,j,k) = fluxes%frac_shelf_u(I,j)  * hvel_shelf(I,k) + &
                    (1.0-fluxes%frac_shelf_u(I,j)) * hvel(I,k)
@@ -1203,7 +1211,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
       endif ; enddo ; enddo
     else
       do K=1,nz+1 ; do I=Isq,Ieq ; if (do_i(I)) CS%a_u(I,j,K) = a(I,K) ; enddo ; enddo
-      do k=1,nz ; do I=Isq,Ieq ; if (do_i(I)) CS%h_u(I,j,k) = hvel(I,k) ; enddo ; enddo
+      do k=1,nz ; do I=Isq-1,Ieq ; if (do_i(I)) CS%h_u(I,j,k) = hvel(I,k) ; enddo ; enddo
     endif
 
   enddo
@@ -1216,7 +1224,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
 !$OMP                          private(do_i,kv_bbl,bbl_thick,z_i,h_harm,h_arith,hvel,z2,      &
 !$OMP                                  botfn,zh,Dmin,zcol1,zcol2,a,do_any_shelf,do_i_shelf,  &
 !$OMP                                  a_shelf,Ztop_min,I_HTbl,hvel_shelf,topfn,h_ml,z2_wt)
-  do J=Jsq,Jeq
+  do J=Jsq-1,Jeq
     do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
     if (CS%bottomdraglaw) then ; do i=is,ie
@@ -1335,7 +1343,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
       elseif (do_i(i)) then
         CS%a_v(i,J,K) = a(i,K)
       endif ; enddo ; enddo
-      do k=1,nz ; do i=is,ie ; if (do_i_shelf(i)) then
+      do k=1,nz ; do i=is-1,ie ; if (do_i_shelf(i)) then
         ! Should we instead take the inverse of the average of the inverses?
         CS%h_v(i,J,k) = fluxes%frac_shelf_v(i,J)  * hvel_shelf(i,k) + &
                    (1.0-fluxes%frac_shelf_v(i,J)) * hvel(i,k)
@@ -1344,7 +1352,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
       endif ; enddo ; enddo
     else
       do K=1,nz+1 ; do i=is,ie ; if (do_i(i)) CS%a_v(i,J,K) = a(i,K) ; enddo ; enddo
-      do k=1,nz ; do i=is,ie ; if (do_i(i)) CS%h_v(i,J,k) = hvel(i,k) ; enddo ; enddo
+      do k=1,nz ; do i=is-1,ie ; if (do_i(i)) CS%h_v(i,J,k) = hvel(i,k) ; enddo ; enddo
     endif
   enddo ! end of v-point j loop
 
