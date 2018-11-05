@@ -30,7 +30,7 @@
 
 !> On 5 November 2018
 !> Interpolation                     L768 - 828 
-!> Update index in u-loop, v-loop and vertvisc_coef
+!> Update index in u-loop, v-loop and vertvisc_coef (L990)
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -528,7 +528,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 ! Luwei's Lee Wave Parameterisation - u(I,j,k) component
 
   do j=G%jsc-1,G%jec 
-    do i=is-1,ie+1;  
+    do i=is-1,ie;  
       h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
     enddo
   enddo
@@ -536,7 +536,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
 
   do j=G%jsc-1,G%jec
-    do I=Isq-1,Ieq+1 ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
+    do I=Isq-1,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
     !write(*,*) '--------u component--------'
 
@@ -545,7 +545,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
  
     kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
 !topography, in m-1.
-    do I=Isq-1,Ieq+1 ; if (do_i(I)) then
+    do I=Isq-1,Ieq ; if (do_i(I)) then
         
       N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
       !write(*,*) j, I, N_bot_temporary
@@ -688,14 +688,14 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 ! Luwei's Lee Wave Parameterisation - v(i,J,k) component
 
   do J=Jsq-1,Jeq
-    do i=is-1,ie+1 ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
+    do i=is-1,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
     !write(*,*) '--------v component--------'
 
     !decay_scale = 5.
     decay_depth = 500.
      
-    do i=is-1,ie+1; if (do_i(i)) then
+    do i=is-1,ie; if (do_i(i)) then
         
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
