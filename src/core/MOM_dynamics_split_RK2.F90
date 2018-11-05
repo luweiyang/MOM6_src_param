@@ -582,6 +582,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   call cpu_clock_end(id_clock_mom_update)
 
   call do_group_pass(CS%pass_uvp, G%Domain)
+  call do_group_pass(CS%pass_h, G%Domain)
 
   if (CS%debug) then
     call uchksum(up,"Predictor 1 u",G%HI,haloshift=0)
@@ -801,6 +802,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   call cpu_clock_end(id_clock_mom_update)
 
   call do_group_pass(CS%pass_uv, G%Domain)
+  call do_group_pass(CS%pass_h, G%Domain)
 
   if (CS%debug) then
     call uchksum(u,"Corrector 1 u",G%HI,haloshift=0)
