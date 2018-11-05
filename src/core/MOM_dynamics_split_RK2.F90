@@ -526,7 +526,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
     call cpu_clock_end(id_clock_pass)
   endif
 
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(CS%pass_h, G%Domain)
 
 ! u_accel_bt = layer accelerations due to barotropic solver
   if (associated(CS%BT_cont) .or. CS%BT_use_layer_fluxes) then
@@ -1168,7 +1168,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, param_fil
     CS%v_av(:,:,:) = v(:,:,:)
   endif
 
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(CS%pass_h, G%Domain)
 
   ! This call is just here to initialize uh and vh.
   if (.not. query_initialized(uh,"uh",restart_CS) .or. &
