@@ -1,32 +1,36 @@
 !> Implements vertical viscosity (vertvisc)
 !> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L340 - 378 
-!> --- u-component      ---  > L430 - 500
-!> --- v-component      ---  > L604 - 672
+!> --- Assign variables ---  > L344 - 391 
+!> --- u-component      ---  > L528 - 610
+!> --- v-component      ---  > L688 - 764
 
 !> On 9 October 2018, save diagnostic fields
-!> --- Add identifier   ---  > L145 - 147
-!> --- Call post_data   ---  > L764 - 777
-!> --- Register diag field   > L1896-1912
+!> --- Add identifier   ---  > L149 - 151
+!> --- Call post_data   ---  > L861 - 874
+!> --- Register diag field   > L1993-2009
 
 !> On 11 October 2018, replace constant N with N2_bot 
-!> Add subroutine find_N2_bottom     L169 - 275 
-!> Add Structure tv                  L288 - 290
-!> Add dimensions for h0_small_scale L372        Assign values L408
-!> Add varialbe N2_bot               L376        Call          L412       
+!> Add subroutine find_N2_bottom     L173 - 279 
+!> Add Structure tv                  L292 - 294
+!> Add dimensions for h0_small_scale L385        Assign values L532
+!> Add varialbe N2_bot               L389        Call          L536       
 
 !> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L483, 655 
+!> L592, 742 
 
 !> On 18 October 2018, 
 !> Add depth limit for lee wave stress calculation, which is only applied to 
-!> depth > 1km                       L459 - 463, 629 - 633 
+!> depth > 1km                       L568 - 572, 716 - 720 
 !> Add initial values for body force and epsilon, hoping to eliminate large
-!> values below the topography       L388 - 389, 492 - 498, 664 - 670
+!> values below the topography       L401 - 410
 
 !> On 23 October 2018,
 !> Add lw_epsilon_lay - epsilon times layer thickness, get ready for variable
-!> transfer.                         L656
+!> transfer.                         L593, 743
+
+!> On 5 November 2018
+!> Interpolation                     L768 - 828 
+!> Update index in u-loop, v-loop and vertvisc_coef
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
