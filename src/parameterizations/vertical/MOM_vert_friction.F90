@@ -1099,7 +1099,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
 !  nearly massless layers layers ride over the topography.
     if (CS%harmonic_visc) then
       do I=Isq,Ieq ; z_i(I,nz+1) = 0.0 ; enddo
-      do k=nz,1,-1 ; do I=Isq,Ieq ; if (do_i(I)) then
+      do k=nz,1,-1 ; do I=Isq-1,Ieq ; if (do_i(I)) then
         h_harm(I,k) = 2.0*h(i,j,k)*h(i+1,j,k) / (h(i,j,k)+h(i+1,j,k)+h_neglect)
         h_arith = 0.5*(h(i+1,j,k)+h(i,j,k))
 
@@ -1118,7 +1118,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
       do i=Isq,Ieq+1 ; zcol(i) = -G%bathyT(i,j) * m_to_H ; enddo
       do k=nz,1,-1
         do i=Isq,Ieq+1 ; zcol(i) = zcol(i) + h(i,j,k) ; enddo
-        do I=Isq,Ieq ; if (do_i(I)) then
+        do I=Isq-1,Ieq ; if (do_i(I)) then
           h_harm(I,k) = 2.0*h(i,j,k)*h(i+1,j,k) / (h(i,j,k)+h(i+1,j,k)+h_neglect)
           h_arith = 0.5*(h(i+1,j,k)+h(i,j,k))
           zh(I) = zh(I) + h_harm(I,k)
@@ -1148,7 +1148,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
     endif
     do_any_shelf = .false.
     if (associated(fluxes%frac_shelf_u)) then
-      do I=Isq,Ieq
+      do I=Isq-1,Ieq
         CS%a1_shelf_u(I,j) = 0.0
         do_i_shelf(I) = (do_i(I) .and. fluxes%frac_shelf_u(I,j) > 0.0)
         if (do_i_shelf(I)) do_any_shelf = .true.
@@ -1166,7 +1166,7 @@ subroutine vertvisc_coef(u, v, h, fluxes, visc, dt, G, GV, CS)
           endif ; enddo
           do k=1,nz
             do i=Isq,Ieq+1 ; zcol(i) = zcol(i) - h(i,j,k) ; enddo
-            do I=Isq,Ieq ; if (do_i_shelf(I)) then
+            do I=Isq-1,Ieq ; if (do_i_shelf(I)) then
               h_arith = 0.5*(h(i+1,j,k)+h(i,j,k))
               zh(I) = zh(I) + h_harm(I,k)
 
