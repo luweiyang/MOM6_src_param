@@ -199,7 +199,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
   G_Rho0 = GV%g_Earth / GV%Rho0
 
   ! Find the (limited) density jump across each interface.
-  do i=is-1,ie
+  do i=is-1,ie+1
     dRho_int(i,1) = 0.0 ; dRho_int(i,nz+1) = 0.0
   enddo
 !$OMP parallel do default(none) shared(is,ie,js,je,nz,tv,fluxes,G,GV,h,T_f,S_f, &
@@ -211,31 +211,31 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
   do j=js-1,je
     if (associated(tv%eqn_of_state)) then
       if (associated(fluxes%p_surf)) then
-        do i=is-1,ie ; pres(i) = fluxes%p_surf(i,j) ; enddo
+        do i=is-1,ie+1 ; pres(i) = fluxes%p_surf(i,j) ; enddo
       else
-        do i=is-1,ie ; pres(i) = 0.0 ; enddo
+        do i=is-1,ie+1 ; pres(i) = 0.0 ; enddo
       endif
       do K=2,nz
-        do i=is-1,ie
+        do i=is-1,ie+1
           pres(i) = pres(i) + GV%H_to_Pa*h(i,j,k-1)
           Temp_Int(i) = 0.5 * (T_f(i,j,k) + T_f(i,j,k-1))
           Salin_Int(i) = 0.5 * (S_f(i,j,k) + S_f(i,j,k-1))
         enddo
         call calculate_density_derivs(Temp_int, Salin_int, pres, &
                  dRho_dT(:), dRho_dS(:), is, ie-is+1, tv%eqn_of_state)
-        do i=is-1,ie
+        do i=is-1,ie+1
           dRho_int(i,K) = max(dRho_dT(i)*(T_f(i,j,k) - T_f(i,j,k-1)) + &
                               dRho_dS(i)*(S_f(i,j,k) - S_f(i,j,k-1)), 0.0)
         enddo
       enddo
     else
-      do K=2,nz ; do i=is-1,ie
+      do K=2,nz ; do i=is-1,ie+1
         dRho_int(i,K) = GV%Rlay(k) - GV%Rlay(k-1)
       enddo ; enddo
     endif
 
     ! Find the bottom boundary layer stratification.
-    do i=is-1,ie
+    do i=is-1,ie+1
       hb(i) = 0.0 ; dRho_bot(i) = 0.0
       z_from_bot(i) = 0.5*GV%H_to_m*h(i,j,nz)
       do_i(i) = (G%mask2dT(i,j) > 0.5)
@@ -244,7 +244,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
 
     do k=nz,2,-1
       do_any = .false.
-      do i=is-1,ie ; if (do_i(i)) then
+      do i=is-1,ie+1 ; if (do_i(i)) then
         dz_int = 0.5*GV%H_to_m*(h(i,j,k) + h(i,j,k-1))
         z_from_bot(i) = z_from_bot(i) + dz_int ! middle of the layer above
 
@@ -265,7 +265,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
       if (.not.do_any) exit
     enddo
 
-    do i=is-1,ie
+    do i=is-1,ie+1
       if (hb(i) > 0.0) then
         N2_bot(i,j) = (G_Rho0 * dRho_bot(i)) / hb(i)
       else ;  N2_bot(i,j) = 0.0 ; endif
@@ -524,7 +524,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 ! Luwei's Lee Wave Parameterisation - u(I,j,k) component
 
   do j=G%jsc-1,G%jec 
-    do i=is-1,ie;  
+    do i=is-1,ie+1;  
       h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
     enddo
   enddo
@@ -532,7 +532,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
 
   do j=G%jsc-1,G%jec
-    do I=Isq-1,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
+    do I=Isq-1,Ieq+1 ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
     !write(*,*) '--------u component--------'
 
@@ -541,7 +541,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
  
     kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
 !topography, in m-1.
-    do I=Isq-1,Ieq ; if (do_i(I)) then
+    do I=Isq-1,Ieq+1 ; if (do_i(I)) then
         
       N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
       !write(*,*) j, I, N_bot_temporary
@@ -684,14 +684,14 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 ! Luwei's Lee Wave Parameterisation - v(i,J,k) component
 
   do J=Jsq-1,Jeq
-    do i=is-1,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
+    do i=is-1,ie+1 ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
     !write(*,*) '--------v component--------'
 
     !decay_scale = 5.
     decay_depth = 500.
      
-    do i=is-1,ie; if (do_i(i)) then
+    do i=is-1,ie+1; if (do_i(i)) then
         
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
