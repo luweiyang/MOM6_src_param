@@ -581,52 +581,52 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   enddo
   call cpu_clock_end(id_clock_mom_update)
 
-  call do_group_pass(CS%pass_uvp, G%Domain)
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(cs%pass_uvp, g%domain)
+  !call do_group_pass(cs%pass_h, g%domain)
 
-  if (CS%debug) then
-    call uchksum(up,"Predictor 1 u",G%HI,haloshift=0)
-    call vchksum(vp,"Predictor 1 v",G%HI,haloshift=0)
-    call hchksum(GV%H_to_kg_m2*h,"Predictor 1 h",G%HI,haloshift=1)
-    call uchksum(GV%H_to_kg_m2*uh,"Predictor 1 uh",G%HI,haloshift=2)
-    call vchksum(GV%H_to_kg_m2*vh,"Predictor 1 vh",G%HI,haloshift=2)
-!   call MOM_state_chksum("Predictor 1", up, vp, h, uh, vh, G, GV, haloshift=1)
-    call MOM_accel_chksum("Predictor accel", CS%CAu, CS%CAv, CS%PFu, CS%PFv, &
-             CS%diffu, CS%diffv, G, GV, CS%pbce, CS%u_accel_bt, CS%v_accel_bt)
-    call MOM_state_chksum("Predictor 1 init", u_init, v_init, h, uh, vh, G, GV, haloshift=2)
-    call check_redundant("Predictor 1 up", up, vp, G)
-    call check_redundant("Predictor 1 uh", uh, vh, G)
+  if (cs%debug) then
+    call uchksum(up,"predictor 1 u",g%hi,haloshift=0)
+    call vchksum(vp,"predictor 1 v",g%hi,haloshift=0)
+    call hchksum(gv%h_to_kg_m2*h,"predictor 1 h",g%hi,haloshift=1)
+    call uchksum(gv%h_to_kg_m2*uh,"predictor 1 uh",g%hi,haloshift=2)
+    call vchksum(gv%h_to_kg_m2*vh,"predictor 1 vh",g%hi,haloshift=2)
+!   call mom_state_chksum("predictor 1", up, vp, h, uh, vh, g, gv, haloshift=1)
+    call mom_accel_chksum("predictor accel", cs%cau, cs%cav, cs%pfu, cs%pfv, &
+             cs%diffu, cs%diffv, g, gv, cs%pbce, cs%u_accel_bt, cs%v_accel_bt)
+    call mom_state_chksum("predictor 1 init", u_init, v_init, h, uh, vh, g, gv, haloshift=2)
+    call check_redundant("predictor 1 up", up, vp, g)
+    call check_redundant("predictor 1 uh", uh, vh, g)
   endif
 
 ! up <- up + dt_pred d/dz visc d/dz up
 ! u_av  <- u_av  + dt_pred d/dz visc d/dz u_av
   call cpu_clock_begin(id_clock_vertvisc)
-  if (CS%debug) then
-    call uchksum(up,"0 before vertvisc: up",G%HI,haloshift=0)
-    call vchksum(vp,"0 before vertvisc: vp",G%HI,haloshift=0)
+  if (cs%debug) then
+    call uchksum(up,"0 before vertvisc: up",g%hi,haloshift=0)
+    call vchksum(vp,"0 before vertvisc: vp",g%hi,haloshift=0)
   endif
-  call vertvisc_coef(up, vp, h, fluxes, visc, dt_pred, G, GV, CS%vertvisc_CSp)
-  call vertvisc(up, vp, h, fluxes, visc, dt_pred, CS%OBC, CS%ADp, CS%CDp, G, &
-                GV, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot)
-  if (showCallTree) call callTree_wayPoint("done with vertvisc (step_MOM_dyn_split_RK2)")
-  if (G%nonblocking_updates) then
+  call vertvisc_coef(up, vp, h, fluxes, visc, dt_pred, g, gv, cs%vertvisc_csp)
+  call vertvisc(up, vp, h, fluxes, visc, dt_pred, cs%obc, cs%adp, cs%cdp, g, &
+                gv, cs%vertvisc_csp, cs%taux_bot, cs%tauy_bot)
+  if (showcalltree) call calltree_waypoint("done with vertvisc (step_mom_dyn_split_rk2)")
+  if (g%nonblocking_updates) then
     call cpu_clock_end(id_clock_vertvisc) ; call cpu_clock_begin(id_clock_pass)
-    call start_group_pass(CS%pass_uvp, G%Domain)
+    call start_group_pass(cs%pass_uvp, g%domain)
     call cpu_clock_end(id_clock_pass) ; call cpu_clock_begin(id_clock_vertvisc)
   endif
-  call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, CS%vertvisc_CSp)
+  call vertvisc_remnant(visc, cs%visc_rem_u, cs%visc_rem_v, dt_pred, g, gv, cs%vertvisc_csp)
   call cpu_clock_end(id_clock_vertvisc)
 
   call cpu_clock_begin(id_clock_pass)
-  call do_group_pass(CS%pass_visc_rem, G%Domain)
-  if (G%nonblocking_updates) then
-    call complete_group_pass(CS%pass_uvp, G%Domain)
+  call do_group_pass(cs%pass_visc_rem, g%domain)
+  if (g%nonblocking_updates) then
+    call complete_group_pass(cs%pass_uvp, g%domain)
   else
-    call do_group_pass(CS%pass_uvp, G%Domain)
+    call do_group_pass(cs%pass_uvp, g%domain)
   endif
   call cpu_clock_end(id_clock_pass)
 
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(cs%pass_h, g%domain)
 
   ! uh = u_av * h
   ! hp = h + dt * div . uh
@@ -801,8 +801,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   enddo
   call cpu_clock_end(id_clock_mom_update)
 
-  call do_group_pass(CS%pass_uv, G%Domain)
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(CS%pass_uv, G%Domain)
+  !call do_group_pass(CS%pass_h, G%Domain)
 
   if (CS%debug) then
     call uchksum(u,"Corrector 1 u",G%HI,haloshift=0)
@@ -845,7 +845,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   endif
   call cpu_clock_end(id_clock_pass)
 
-  call do_group_pass(CS%pass_h, G%Domain)
+  !call do_group_pass(CS%pass_h, G%Domain)
 
   ! uh = u_av * h
   ! h  = h + dt * div . uh
