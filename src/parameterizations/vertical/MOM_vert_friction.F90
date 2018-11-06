@@ -212,7 +212,7 @@ subroutine find_N2_bottom(h, tv, T_f, S_f, h2, fluxes, G, GV, N2_bot)
 !$OMP                                  hb,dRho_bot,z_from_bot,do_i,h_amp,       &
 !$OMP                                  do_any,dz_int) &
 !$OMP                     firstprivate(dRho_int)
-  do j=js-1,je
+  do j=js-1,je+1
     if (associated(tv%eqn_of_state)) then
       if (associated(fluxes%p_surf)) then
         do i=is-1,ie+1 ; pres(i) = fluxes%p_surf(i,j) ; enddo
@@ -532,9 +532,18 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
     enddo
   enddo
-
+  
+  ! N2_bot(i,j) - call once
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
 
+  ! Interpolate to get N2_bot(I,j) and N2_bot(i,J) from N2_bot(i,j)
+  do j=G%jsc,G%jec 
+    do i=is,ie;  
+      N2_bot(I,j) = 0.5 * (N2_bot(i,j) + N2_bot(i+1,j))     
+      N2_bot(i,J) = 0.5 * (N2_bot(i,j) + N2_bot(i,j+1)) 
+    enddo
+  enddo
+  
   do j=G%jsc-1,G%jec
     do I=Isq-1,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
