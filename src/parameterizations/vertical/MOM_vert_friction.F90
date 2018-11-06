@@ -1,36 +1,40 @@
 !> Implements vertical viscosity (vertvisc)
 !> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L344 - 391 
-!> --- u-component      ---  > L528 - 610
-!> --- v-component      ---  > L688 - 764
+!> --- Assign variables ---  > L348 - 395 
+!> --- u-component      ---  > L532 - 630
+!> --- v-component      ---  > L708 - 786
 
 !> On 9 October 2018, save diagnostic fields
-!> --- Add identifier   ---  > L149 - 151
-!> --- Call post_data   ---  > L861 - 874
-!> --- Register diag field   > L1993-2009
+!> --- Add identifier   ---  > L153 - 155
+!> --- Call post_data   ---  > L883 - 896
+!> --- Register diag field   > L2015-2031
 
 !> On 11 October 2018, replace constant N with N2_bot 
-!> Add subroutine find_N2_bottom     L173 - 279 
-!> Add Structure tv                  L292 - 294
-!> Add dimensions for h0_small_scale L385        Assign values L532
-!> Add varialbe N2_bot               L389        Call          L536       
+!> Add subroutine find_N2_bottom     L177 - 283 
+!> Add Structure tv                  L296 - 298
+!> Add dimensions for h0_small_scale L389        Assign values L536
+!> Add variable N2_bot               L393        Call          L548       
 
 !> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L592, 742 
+!> L612, 764 
 
 !> On 18 October 2018, 
 !> Add depth limit for lee wave stress calculation, which is only applied to 
-!> depth > 1km                       L568 - 572, 716 - 720 
+!> depth > 1km                       L588 - 592, 738 - 742 
 !> Add initial values for body force and epsilon, hoping to eliminate large
-!> values below the topography       L401 - 410
+!> values below the topography       L405 - 414
 
 !> On 23 October 2018,
 !> Add lw_epsilon_lay - epsilon times layer thickness, get ready for variable
-!> transfer.                         L593, 743
+!> transfer.                         L613, 765
 
 !> On 5 November 2018
-!> Interpolation                     L768 - 828 
-!> Update index in u-loop, v-loop and vertvisc_coef (L990)
+!> Interpolation                     L790 - 850 
+!> Update index in u-loop, v-loop and vertvisc_coef (L1012)
+
+!> On 6 November 2018 
+!> Interpolation for N2_bot          L551 - 556   Set for u-L570 v-L720
+!> Interpolation for h0_small_scale  L540 - 545
 
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
@@ -527,9 +531,16 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 !=========================
 ! Luwei's Lee Wave Parameterisation - u(I,j,k) component
 
-  do j=G%jsc-1,G%jec 
-    do i=is-1,ie;  
+  do j=G%jsc-1,G%jec+1 
+    do i=is-1,ie+1;  
       h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
+    enddo
+  enddo
+  ! Interpolate h0_small_scale 
+  do j=G%jsc,G%jec 
+    do i=is,ie;  
+      h0_small_scale(I,j) = 0.5 * (h0_small_scale(i,j) + h0_small_scale(i+1,j))     
+      h0_small_scale(i,J) = 0.5 * (h0_small_scale(i,j) + h0_small_scale(i,j+1)) 
     enddo
   enddo
   
@@ -706,6 +717,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
      
     do i=is-1,ie; if (do_i(i)) then
         
+      N_bot_temporary = sqrt(N2_bot(i,J))   ! temporary bottom stratification, in s-1.
+
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
       !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
 
