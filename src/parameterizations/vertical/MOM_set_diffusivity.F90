@@ -1,18 +1,3 @@
-!* On 18 October 2018 Add diagnostic variable Kd_Yang
-!* Add identifier                L326
-!* Post data                     L886   
-!* Register                      L3034-3035
-!* Declare variables             L463- 465
-!* Key calculation               L780- 796
-!* On 31 October 2018 Correct TKE_to_Kd, TKE_Yang and Kd_Yang
-!* TKE_to_Kd move it out         L3048, L897
-!* Vertical position - layers    L3045, L3048
-
-
-
-
-
-
 module MOM_set_diffusivity
 !***********************************************************************
 !*                   GNU General Public License                        *
@@ -460,8 +445,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
   real :: epsilon
 
 !==== Luwei Yang =====
-  real :: TKE_Yang(SZI_(G),SZJ_(G),SZK_(G))  ! Temporary lee wave energy dissipation (W/kg)
-  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G))  ! Lee wave diffusivity (m2/s) layer, not interface
+  real :: TKE_Yang(SZI_(G),SZJ_(G),SZK_(G))  ! Lee wave energy dissipation (W kg-1 m = m3 s-3)
+  real :: Kd_Yang(SZI_(G),SZJ_(G),SZK_(G))   ! Lee wave diffusivity (m s-2) layer, not interface
   real :: Kd_add
 !=====================
 
@@ -784,8 +769,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
       !TKE_Yang(i,j,k) = 1.e-8
       TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
       
-      Kd_add  = TKE_to_Kd(i,k) * TKE_Yang(i,j,k) ! weird that TKE_to_Kd is not
-!dependent on j
+      Kd_add  = 0.2 * TKE_to_Kd(i,k) * TKE_Yang(i,j,k) 
+
       
       !write(*,*) '----------------------'
       !write(*,*) j,k,i,TKE_Yang(i,j,k)
