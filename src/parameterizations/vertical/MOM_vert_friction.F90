@@ -1,41 +1,3 @@
-!> Implements vertical viscosity (vertvisc)
-!> Lee Wave Parameterisation - Body Force implementation, on 5 October 2018
-!> --- Assign variables ---  > L348 - 395 
-!> --- u-component      ---  > L532 - 630
-!> --- v-component      ---  > L708 - 786
-
-!> On 9 October 2018, save diagnostic fields
-!> --- Add identifier   ---  > L153 - 155
-!> --- Call post_data   ---  > L883 - 896
-!> --- Register diag field   > L2015-2031
-
-!> On 11 October 2018, replace constant N with N2_bot 
-!> Add subroutine find_N2_bottom     L177 - 283 
-!> Add Structure tv                  L296 - 298
-!> Add dimensions for h0_small_scale L389        Assign values L536
-!> Add variable N2_bot               L393        Call          L548       
-
-!> On 15 October 2018, add energy dissipation rate epsilon calculation 
-!> L612, 764 
-
-!> On 18 October 2018, 
-!> Add depth limit for lee wave stress calculation, which is only applied to 
-!> depth > 1km                       L588 - 592, 738 - 742 
-!> Add initial values for body force and epsilon, hoping to eliminate large
-!> values below the topography       L405 - 414
-
-!> On 23 October 2018,
-!> Add lw_epsilon_lay - epsilon times layer thickness, get ready for variable
-!> transfer.                         L613, 765
-
-!> On 5 November 2018
-!> Interpolation                     L790 - 850 
-!> Update index in u-loop, v-loop and vertvisc_coef (L1012)
-
-!> On 6 November 2018 
-!> Interpolation for N2_bot          L551 - 556   Set for u-L570 v-L720
-!> Interpolation for h0_small_scale  L540 - 545
-
 module MOM_vert_friction
 ! This file is part of MOM6. See LICENSE.md for the license.
 
@@ -153,6 +115,7 @@ type, public :: vertvisc_CS ; private
   integer :: id_lw_stress_u = -1, id_lw_stress_v = -1
   integer :: id_lw_body_force_u = -1, id_lw_body_force_v = -1
   integer :: id_lw_epsilon = -1, id_lw_epsilon_lay= -1, id_lw_TKE = -1
+  integer :: id_N2_bot = -1, id_steepness = -1, id_lw_drag_coeff = -1  
   !>@}
 
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL()
@@ -345,26 +308,24 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
                            ! units of m2 s-1.
 
 !==== Lee waves =======
-  real :: lw_body_force_u(SZIB_(G),SZJ_(G),SZK_(GV))   ! In fact, this is density * body force at u point.
-  real :: lw_body_force_v(SZI_(G),SZJB_(G),SZK_(GV))   ! In fact, this is density * body force at v point.
+  real :: lw_body_force_u(SZIB_(G),SZJ_(G),SZK_(GV))  ! Body force at u point, in m s-2.
+  real :: lw_body_force_v(SZI_(G),SZJB_(G),SZK_(GV))  ! Body force at v point, in m s-2.
 
-  real :: lw_drag_coeff     ! Lee wave drag coefficient, in m s-1.
+  real :: lw_drag_coeff                               ! Lee wave drag coefficient, in m s-1.
 
-  real :: lw_stress_u(SZIB_(G),SZJ_(G))      ! Lee wave stress at u point
-  real :: lw_stress_v(SZI_(G),SZJB_(G))      ! Lee wave stress at v point
+  real :: lw_stress_u(SZIB_(G),SZJ_(G))               ! Bottom lee wave stress at u point, in N m-2.
+  real :: lw_stress_v(SZI_(G),SZJB_(G))               ! Bottom lee wave stress at v point, in N m-2.  
 
-  real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component
+  real :: lw_epsilon_u(SZIB_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component, in m2 s-3 (=w kg-1).
   real :: lw_epsilon_ut(SZI_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate u component interpolated to tracer points
-  real :: lw_epsilon_v(SZI_(G),SZJB_(G),SZK_(GV))     ! Lee wave energy dissipation rate v component
+  real :: lw_epsilon_v(SZI_(G),SZJB_(G),SZK_(GV))     ! Lee wave energy dissipation rate v component, in m2 s-3 (=w kg-1).
   real :: lw_epsilon_vt(SZI_(G),SZJ_(G),SZK_(GV))     ! Lee wave energy dissipation rate v component interpolated to tracer points
-  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (ut + vt), a
-!scalar
-  real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer u component
-  real :: lw_epsilon_lay_ut(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer u component interpolated to tracer points
-  real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component
-  real :: lw_epsilon_lay_vt(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate in each layer v component interpolated to tracer points
-  !real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))    ! Lee wave energy dissipation rate in each layer total tracer points
-!total (ut + vt), a scalar
+  real :: lw_epsilon(SZI_(G),SZJ_(G),SZK_(GV))        ! Lee wave energy dissipation rate total (ut + vt), a scalar
+  real :: lw_epsilon_lay_u(SZIB_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate times layer thickness u component, in m3 s-3.
+  real :: lw_epsilon_lay_ut(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate times layer thickness u component interpolated to tracer points
+  real :: lw_epsilon_lay_v(SZI_(G),SZJB_(G),SZK_(GV)) ! Lee wave energy dissipation rate times layer thickness v component, in m3 s-3.
+  real :: lw_epsilon_lay_vt(SZI_(G),SZJ_(G),SZK_(GV)) ! Lee wave energy dissipation rate times layer thickness v component interpolated to tracer points
+  !real :: lw_epsilon_lay(SZI_(G),SZJ_(G),SZK_(GV))   ! Lee wave energy dissipation rate in each layer total (ut + vt), a scalar
 
   real :: lw_TKE_u(SZIB_(G),SZJ_(G))     ! Bottom energy flux into lee waves u component, in m3 s-3.
   real :: lw_TKE_v(SZI_(G),SZJB_(G))     ! Bottom energy flux into lee waves v component, in m3 s-3.
@@ -372,27 +333,26 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: lw_TKE_vt(SZI_(G),SZJ_(G))     ! Bottom energy flux into lee waves v component interpolated to tracer points, in m3 s-3.
   real :: lw_TKE(SZI_(G),SZJ_(G))        ! Bottom energy flux into lee waves total (u + v), a scalar. 
 
-  real :: vert_structure_numer(SZK_(GV)) ! Numerator of the expression of 
-!vertical structure function
+  real :: vert_structure_numer(SZK_(GV)) ! Numerator of the expression of vertical structure function
   real :: vert_structure_numer_sum       ! Sum of numerators, used to replace
-!the real denominator in the vertical structure function. This way, vertical
-!structure function always sums up to 1.  
-  real :: vert_structure_u   ! Vertical structure function at u point
-  real :: vert_structure_v   ! Vertical structure function at v point
-  real :: decay_scale        ! Number of layers that are in the decay depth
-  real :: decay_depth        ! Decay depth in vertical structure function
-  real :: H_total_u(SZIB_(G),SZJ_(G)) ! Total depth at u point
-  real :: H_total_v(SZI_(G),SZJB_(G)) ! Total depth at v point
-  real :: H_z_u(SZK_(GV))    ! Equivalent to zl at u point
-  real :: H_z_v(SZK_(GV))    ! Equivalent to zl at v point
-  real :: dummy              ! Sum for vertical structure function
-  real :: h0_small_scale(SZI_(G),SZJ_(G))     ! Amplitude of small-scale topography
-  real :: kh_small_scale     ! Horizontal wavenumber for small-scale topography
-  real :: N_bot_temporary    ! Temporary bottom stratification, constant, in
-!s-1.
-  real :: N2_bot(SZI_(G),SZJ_(G))
-  integer :: k_u             ! intermediate index to loop in the ocean above topography  
-  integer :: k_v             ! intermediate index to loop in the ocean interior above topography 
+                                         ! the real denominator in the vertical structure function to ensure
+                                         ! vertical structure function always sums up to 1.  
+  real :: vert_structure_u               ! Vertical structure function at u point
+  real :: vert_structure_v               ! Vertical structure function at v point
+  real :: decay_scale                    ! Number of layers that are in the decay depth (not in use)
+  real :: decay_depth                    ! Decay depth in vertical structure function
+  real :: H_total_u(SZIB_(G),SZJ_(G))    ! Total depth at u point
+  real :: H_total_v(SZI_(G),SZJB_(G))    ! Total depth at v point
+  real :: H_z_u(SZK_(GV))                ! Equivalent to zl at u point
+  real :: H_z_v(SZK_(GV))                ! Equivalent to zl at v point
+  real :: dummy                          ! Sum for vertical structure function
+  real :: h0_small_scale(SZI_(G),SZJ_(G))! Amplitude of small-scale topography, or roughness, in m.
+  real :: kh_small_scale                 ! Horizontal wavenumber for small-scale topography, in m-1.
+  real :: N_bot_temporary                ! Temporary bottom stratification, constant, in s-1.
+  real :: N2_bot(SZI_(G),SZJ_(G))        ! Bottom stratification squared, in s-2.
+  integer :: k_u                         ! Index to loop in the ocean above topography, the final value = bottom level+1  
+  integer :: k_v                         ! Intermediate index to loop in the ocean interior above topography
+  real :: steepness(SZI_(G),SZJ_(G))     ! Steepness parameter, NH/U, non-dimensional 
 !======================
 
 
@@ -529,14 +489,14 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo ! end u-component j loop
 
 !=========================
-! Luwei's Lee Wave Parameterisation - u(I,j,k) component
-
+  ! Small-scale topography
   do j=G%jsc-1,G%jec+1 
     do i=is-1,ie+1;  
-      h0_small_scale(i,j) = 50.0     ! amplitude of small-scale topography, in m.
+      h0_small_scale(i,j) = 50.0     
     enddo
   enddo
-  ! Interpolate h0_small_scale 
+
+  ! Interpolation to u-points and v-points 
   do j=G%jsc,G%jec 
     do i=is,ie;  
       h0_small_scale(I,j) = 0.5 * (h0_small_scale(i,j) + h0_small_scale(i+1,j))     
@@ -544,7 +504,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     enddo
   enddo
   
-  ! N2_bot(i,j) - call once
+  ! N2_bot(i,j). Modified based on 'call find_N2_bottom(h, tv, T_f, S_f, itide%h2, fluxes, G, GV, N2_bot)' 
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
 
   ! Interpolate to get N2_bot(I,j) and N2_bot(i,J) from N2_bot(i,j)
@@ -555,20 +515,16 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     enddo
   enddo
   
+  ! Luwei's Lee Wave Parameterisation - u(I,j,k) component
   do j=G%jsc-1,G%jec
     do I=Isq-1,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0) ; enddo
 
-    !write(*,*) '--------u component--------'
+    decay_depth = 500.0 ! Could alternatively be forumlated as a fucntion of U/N.
+    kh_small_scale = 2.0 * 3.14 / 2000.0 
 
-    !decay_scale = 5.
-    decay_depth = 500. ! Could also be forumlated as a fucntion of U/N.
- 
-    kh_small_scale = 2. * 3.14 / 2000. ! horizontal wavenumber of small-scale
-!topography, in m-1.
     do I=Isq-1,Ieq ; if (do_i(I)) then
         
-      N_bot_temporary = sqrt(N2_bot(I,j))   ! temporary bottom stratification, in s-1.
-      !write(*,*) j, I, N_bot_temporary
+      N_bot_temporary = sqrt(N2_bot(I,j))   
 
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(I,j) * h0_small_scale(I,j) * kh_small_scale
 
@@ -580,21 +536,21 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
           exit
         endif
 
-        H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u)
-        H_z_u(k_u) = H_total_u(I,j)
+        H_total_u(I,j) = H_total_u(I,j) + CS%h_u(I,j,k_u) ! Keep adding layer thickness
+        H_z_u(k_u) = H_total_u(I,j) ! Keep recording cumulative layer thickness
           
-      enddo
+      enddo ! Once exit, k_u = last bottom index + 1
        
       if (H_total_u(I,j) < 1000.0) then
-        lw_stress_u(I,j) = 0.0
+        lw_stress_u(I,j) = 0.0 ! Mask lee wave stress for places where total depth is shallower than 1km
       elseif (H_total_u(I,j) > 1000.0) then 
-        lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1)
+        lw_stress_u(I,j) = - Rho0 * lw_drag_coeff * u(I,j,k_u-1) ! Bottom lee wave stress, in N m-2.  
       endif
 
-      lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0
+      lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0 ! Bottom energy flux into lee waves, in m3 s-3.
       vert_structure_numer_sum = 0.0
 
-      do k = 1,k_u-1 ! k_u -1 is the last level above topography
+      do k = 1,k_u-1 ! (k_u -1) is the last level above topography
 
         !vert_structure_scale = (exp(-((k_u-1)-k)/decay_scale)) / ( decay_scale * (1.-exp(-(k_u-2)/decay_scale)) )
         !vert_structure_depth = (exp(-(H_total_u(I,j)-H_z_u(k))/decay_depth)) / ( decay_depth * (1.-exp(-(H_total_u(I,j)-H_z_u(1))/decay_depth)) ) 
@@ -605,19 +561,18 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       dummy = 0.0
 
       do k = 1,k_u-1
+
         vert_structure_u = vert_structure_numer(k) / vert_structure_numer_sum
-        dummy = dummy + vert_structure_u
+        dummy = dummy + vert_structure_u ! dummy should be 1.0
 
-        lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u
-        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k))
-        lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) 
-        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k)
+        lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u 
+        lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k)) ! in m2 s-3 (=w kg-1). 
+        lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) ! in m3 s-3. 
+        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k) 
 
-        !write(*,*) 'u-----------u-------------'
-        !write(*,*) k, CS%h_u(I,j,k), lw_epsilon_u(I,j,k), lw_epsilon_lay_u(I,j,k)
- 
       enddo
 
+      ! Mask beneath topography
       if (k_u-1 < nz) then
         do k = k_u,nz
           lw_body_force_u(I,j,k) = 0.0
@@ -710,9 +665,6 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   do J=Jsq-1,Jeq
     do i=is-1,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
-    !write(*,*) '--------v component--------'
-
-    !decay_scale = 5.
     decay_depth = 500.
      
     do i=is-1,ie; if (do_i(i)) then
@@ -720,7 +672,6 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       N_bot_temporary = sqrt(N2_bot(i,J))   ! temporary bottom stratification, in s-1.
 
       lw_drag_coeff = 0.5 * N_bot_temporary * h0_small_scale(i,J) * h0_small_scale(i,J) * kh_small_scale
-      !lw_drag_coeff = 0.5 * 1e-3 * 50.*50. * (2*3.14159/2000.)
 
       H_z_v(1) = CS%h_v(i,J,1)
       H_total_v(i,J) = CS%h_v(i,J,1)
@@ -733,12 +684,12 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         H_total_v(i,J) = H_total_v(i,J) + CS%h_v(i,J,k_v)
         H_z_v(k_v) = H_total_v(i,J)
           
-      enddo
+      enddo  ! Once exit, k_v = last bottom index + 1
         
       if (H_total_v(i,J) < 1000.0) then
         lw_stress_v(i,J) = 0.0
       elseif (H_total_v(i,J) > 1000.0) then 
-        lw_stress_v(i,J) = - 1e+3 * lw_drag_coeff * v(i,J,k_v-1)
+        lw_stress_v(i,J) = - Rho0 * lw_drag_coeff * v(i,J,k_v-1)
       endif
 
       lw_TKE_v(i,J) = v(i,J,k_v-1) * lw_stress_v(i,J) / Rho0
@@ -747,11 +698,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       do k = 1,k_v-1 ! k_v -1 is the level above topography
 
         vert_structure_numer(k) = exp(-(H_total_v(i,J)-H_z_v(k))/decay_depth)
-         
-        !write(*,*) k, vert_structure_numer(k)
-        !write(*,*) '-------------------------'
-  
         vert_structure_numer_sum = vert_structure_numer_sum + vert_structure_numer(k)
+
       enddo
 
       dummy = 0.0
@@ -765,9 +713,6 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_epsilon_lay_v(i,J,k) = lw_epsilon_v(i,J,k) * CS%h_v(i,J,k)
         v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
-        !write(*,*) 'v-----------v-------------'
-        !write(*,*) k, CS%h_v(i,J,k), abs(v(i,J,k) * lw_body_force_v(i,J,k)), lw_epsilon_lay_v(i,J,k)
- 
       enddo
         
       if (k_v < nz) then
@@ -792,12 +737,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   do k = 1,nz
     do j = G%jsc,G%jec
       do I = Isq,Ieq
-        !if (lw_epsilon_u(I,j,k)>0 .and. lw_epsilon_u(I-1,j,k)>0) then
         lw_epsilon_ut(i,j,k) = 0.5 * (lw_epsilon_u(I,j,k) + lw_epsilon_u(I-1,j,k))
-        !endif
-        !if (lw_epsilon_lay_u(I,j,k)>0 .and. lw_epsilon_lay_u(I-1,j,k)>0) then
         lw_epsilon_lay_ut(i,j,k) = 0.5 * (lw_epsilon_lay_u(I,j,k) + lw_epsilon_lay_u(I-1,j,k))
-        !endif
       enddo
     enddo
   enddo 
@@ -814,12 +755,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   do k = 1,nz
     do i = is,ie
       do J = Jsq,Jeq
-        !if (lw_epsilon_v(i,J,k)>0 .and. lw_epsilon_v(i,J-1,k)>0) then
         lw_epsilon_vt(i,j,k) = 0.5 * (lw_epsilon_v(i,J,k) + lw_epsilon_v(i,J-1,k))
-        !endif
-        !if (lw_epsilon_lay_v(i,J,k)>0 .and. lw_epsilon_lay_v(i,J-1,k)>0) then
         lw_epsilon_lay_vt(i,j,k) = 0.5 * (lw_epsilon_lay_v(i,J,k) + lw_epsilon_lay_v(i,J-1,k))
-        !endif
       enddo
     enddo
   enddo
@@ -833,8 +770,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
   ! Add lw_epsilon_ut and lw_epsilon_vt  
   do k = 1,nz
-    do i = is,ie
-      do j = G%jsc,G%jec
+    do j = G%jsc,G%jec
+      do i = is,ie
         lw_epsilon(i,j,k) = lw_epsilon_ut(i,j,k) + lw_epsilon_vt(i,j,k)
         visc%lw_epsilon_lay(i,j,k) = lw_epsilon_lay_ut(i,j,k) + lw_epsilon_lay_vt(i,j,k)
       enddo
@@ -842,12 +779,11 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo
 
   ! Add lw_TKE_ut and lw_TKE_vt
-  do i = is,ie
-    do j = G%jsc,G%jec
+  do j = G%jsc,G%jec
+    do i = is,ie
       lw_TKE(i,j) = lw_TKE_ut(i,j) + lw_TKE_vt(i,j)
     enddo
   enddo
-
 !=======Luwei's interpolation part==============================
  
   call vertvisc_limit_vel(u, v, h, ADp, CDp, fluxes, visc, dt, G, GV, CS)
@@ -880,6 +816,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     call post_data(CS%id_taux_bot, taux_bot, CS%diag)
   if (present(tauy_bot) .and. (CS%id_tauy_bot > 0)) &
     call post_data(CS%id_tauy_bot, tauy_bot, CS%diag)
+! Luwei's Lee wave parameterization 
   if (CS%id_lw_stress_u > 0) &
     call post_data(CS%id_lw_stress_u, lw_stress_u, CS%diag)
   if (CS%id_lw_stress_v > 0) &
@@ -894,6 +831,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
     call post_data(CS%id_lw_epsilon_lay, visc%lw_epsilon_lay, CS%diag)
   if (CS%id_lw_TKE > 0) &
     call post_data(CS%id_lw_TKE, lw_TKE, CS%diag)
+  if (CS%id_N2_bot > 0) &
+    call post_data(CS%id_N2_bot, N2_bot, CS%diag)
+  if (CS%id_steepness > 0) &
+    call post_data(CS%id_steepness, steepness, CS%diag)
+  if (CS%id_lw_drag_coeff > 0) &
+    call post_data(CS%id_lw_drag_coeff, lw_drag_coeff, CS%diag)
+! Luwei's Lee wave parameterization 
 
 end subroutine vertvisc
 
@@ -2012,6 +1956,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, param_file, diag, ADp, dirs, &
   CS%id_tauy_bot = register_diag_field('ocean_model', 'tauy_bot', diag%axesCv1, &
      Time, 'Meridional Bottom Stress from Ocean to Earth', 'Pa')
 
+! Luwei's Lee wave parameterization
   CS%id_lw_stress_u = register_diag_field('ocean_model', 'lw_stress_u', &
 diag%axesCu1, Time, 'Zonal Bottom Lee Wave Stress','N m-2')
   CS%id_lw_stress_v = register_diag_field('ocean_model', 'lw_stress_v', &
@@ -2029,6 +1974,16 @@ diag%axesTL, Time, 'Energy dissipation rate due to lee waves breaking in each la
 
   CS%id_lw_TKE = register_diag_field('ocean_model', 'lw_TKE', &
 diag%axesT1, Time, 'Bottom energy flux into lee waves','m3 s-3')
+
+  CS%id_N2_bot = register_diag_field('ocean_model', 'N2_bot', &
+diag%axesT1, Time, 'Bottom stratification squared','s-2')
+
+  CS%id_steepness = register_diag_field('ocean_model', 'steepness', &
+diag%axesT1, Time, 'Steepness parameter','non-dimensional')
+
+  CS%id_lw_drag_coeff = register_diag_field('ocean_model', 'lw_drag_coeff', &
+diag%axesT1, Time, 'Lee wave drag coefficient','m s-1')
+! Luwei's Lee wave parameterization
 
   if ((len_trim(CS%u_trunc_file) > 0) .or. (len_trim(CS%v_trunc_file) > 0)) &
     call PointAccel_init(MIS, Time, G, param_file, diag, dirs, CS%PointAccel_CSp)
