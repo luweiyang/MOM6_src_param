@@ -355,6 +355,9 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   integer :: k_u                         ! Index to loop in the ocean above topography, the final value = bottom level+1  
   integer :: k_v                         ! Index to loop in the ocean above topography
   integer :: k_h                         ! Index to loop in the ocean above topography
+  real :: steepness_u                    ! Local steepness parameter at u point, non-dimensional
+  real :: steepness_v                    ! Local steepness parameter at v point, non-dimensional
+  real :: steepness_c                    ! Critical steepness parameter, non-dimensional (default)
   real :: steepness(SZI_(G),SZJ_(G))     ! Steepness parameter, NH/U, non-dimensional
   real :: u_tracer(SZI_(G),SZJ_(G),SZK_(GV)) ! Interpolate zonal velocity to tracer points, in m s-1. 
   real :: v_tracer(SZI_(G),SZJ_(G),SZK_(GV)) ! Interpolate meridional velocity to tracer points, in m s-1.
@@ -514,12 +517,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   
   ! N2_bot(i,j). Modified based on 'call find_N2_bottom(h, tv, T_f, S_f, itide%h2, fluxes, G, GV, N2_bot)' 
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
+  N_bot = sqrt(N2_bot)
 
-  ! Interpolate to get N2_bot(I,j) and N2_bot(i,J) from N2_bot(i,j)
+  ! Interpolate to get N_bot(I,j) and N_bot(i,J) from N_bot(i,j)
   do j=G%jsc,G%jec 
     do i=is,ie;  
-      N2_bot(I,j) = 0.5 * (N2_bot(i,j) + N2_bot(i+1,j))     
-      N2_bot(i,J) = 0.5 * (N2_bot(i,j) + N2_bot(i,j+1)) 
+      N_bot(I,j) = 0.5 * (N_bot(i,j) + N_bot(i+1,j))     
+      N_bot(i,J) = 0.5 * (N_bot(i,j) + N_bot(i,j+1)) 
     enddo
   enddo
   
@@ -532,7 +536,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
     do I=Isq-1,Ieq ; if (do_i(I)) then
         
-      N_bot_temporary = sqrt(N2_bot(I,j))   
+      N_bot_temporary = N_bot(I,j)   
 
       lw_drag_coeff_u = 0.5 * N_bot_temporary * (h0_small_scale(I,j) ** 2) * kh_small_scale
 
@@ -553,6 +557,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_stress_u(I,j) = 0.0 ! Mask lee wave stress for places where total depth is shallower than 1km
       elseif (H_total_u(I,j) > 1000.0) then 
         lw_stress_u(I,j) = - Rho0 * lw_drag_coeff_u * u(I,j,k_u-1) ! Bottom lee wave stress, in N m-2.  
+      endif
+
+      ! Correction to bottom lee wave stress
+      steepness_u = abs(N_bot(I,j) * h0_small_scale(I,j) / u(I,j,k_u-1))
+      steepness_c = 0.75
+      if (steepness_u > steepness_c) then  
+        lw_stress_u(I,j) = lw_stress_u(I,j) * ((steepness_c/steepness_u) ** 2)
       endif
 
       lw_TKE_u(I,j) = u(I,j,k_u-1) * lw_stress_u(I,j) / Rho0 ! Bottom energy flux into lee waves, in m3 s-3.
@@ -668,8 +679,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   enddo ! end of v-component J loop
 
 !=========================
-! Luwei's Lee Wave Parameterisation - v(i,J,k) component
-
+  ! Luwei's Lee Wave Parameterisation - v(i,J,k) component
   do J=Jsq-1,Jeq
     do i=is-1,ie ; do_i(i) = (G%mask2dCv(i,J) > 0) ; enddo
 
@@ -677,7 +687,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
      
     do i=is-1,ie; if (do_i(i)) then
         
-      N_bot_temporary = sqrt(N2_bot(i,J))   ! temporary bottom stratification, in s-1.
+      N_bot_temporary = N_bot(i,J)   ! temporary bottom stratification, in s-1.
 
       lw_drag_coeff_v = 0.5 * N_bot_temporary * (h0_small_scale(i,J) ** 2) * kh_small_scale
 
@@ -698,6 +708,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_stress_v(i,J) = 0.0
       elseif (H_total_v(i,J) > 1000.0) then 
         lw_stress_v(i,J) = - Rho0 * lw_drag_coeff_v * v(i,J,k_v-1)
+      endif
+
+      ! Correction to bottom lee wave stress
+      steepness_v = abs(N_bot(i,J) * h0_small_scale(i,J) / v(i,J,k_v-1))
+      steepness_c = 0.75
+      if (steepness_v > steepness_c) then  
+        lw_stress_v(i,J) = lw_stress_v(i,J) * ((steepness_c/steepness_v) ** 2)
       endif
 
       lw_TKE_v(i,J) = v(i,J,k_v-1) * lw_stress_v(i,J) / Rho0
@@ -812,8 +829,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       u_tracer_bot(i,j) = u_tracer(i,j,k_h-1)  
       v_tracer_bot(i,j) = v_tracer(i,j,k_h-1) 
       U_tracer_mag(i,j) = sqrt(u_tracer_bot(i,j)**2 + v_tracer_bot(i,j)**2)
-      steepness(i,j) = N2_bot(i,j) * h0_small_scale(i,j) / U_tracer_mag(i,j)
-      lw_drag_coeff(i,j) = 0.5 * N2_bot(i,j) *  (h0_small_scale(i,j) ** 2) * kh_small_scale 
+      steepness(i,j) = N_bot(i,j) * h0_small_scale(i,j) / U_tracer_mag(i,j)
+      lw_drag_coeff(i,j) = 0.5 * N_bot(i,j) *  (h0_small_scale(i,j) ** 2) * kh_small_scale 
     enddo
   enddo
 !=============================================
