@@ -503,7 +503,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   ! Small-scale topography
   do j=G%jsc-1,G%jec+1 
     do i=is-1,ie+1;  
-      h0_small_scale(i,j) = 100.0     
+      h0_small_scale(i,j) = 50.0     
     enddo
   enddo
 
