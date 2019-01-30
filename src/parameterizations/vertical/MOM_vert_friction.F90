@@ -352,6 +352,9 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   real :: kh_small_scale                 ! Horizontal wavenumber for small-scale topography, in m-1.
   real :: N_bot_temporary                ! Temporary bottom stratification, constant, in s-1.
   real :: N2_bot(SZI_(G),SZJ_(G))        ! Bottom stratification squared, in s-2.
+  real :: N_bot(SZI_(G),SZJ_(G))         ! Bottom stratification at tracer point, in s-1.
+  real :: N_bot_u(SZIB_(G),SZJ_(G))      ! Bottom stratification at u point, in s-1.
+  real :: N_bot_v(SZI_(G),SZJB_(G))      ! Bottom stratification at v point, in s-1.
   integer :: k_u                         ! Index to loop in the ocean above topography, the final value = bottom level+1  
   integer :: k_v                         ! Index to loop in the ocean above topography
   integer :: k_h                         ! Index to loop in the ocean above topography
@@ -522,8 +525,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   ! Interpolate to get N_bot(I,j) and N_bot(i,J) from N_bot(i,j)
   do j=G%jsc,G%jec 
     do i=is,ie;  
-      N_bot(I,j) = 0.5 * (N_bot(i,j) + N_bot(i+1,j))     
-      N_bot(i,J) = 0.5 * (N_bot(i,j) + N_bot(i,j+1)) 
+      N_bot_u(I,j) = 0.5 * (N_bot(i,j) + N_bot(i+1,j))     
+      N_bot_v(i,J) = 0.5 * (N_bot(i,j) + N_bot(i,j+1)) 
     enddo
   enddo
   
@@ -536,7 +539,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
 
     do I=Isq-1,Ieq ; if (do_i(I)) then
         
-      N_bot_temporary = N_bot(I,j)   
+      N_bot_temporary = N_bot_u(I,j)   
 
       lw_drag_coeff_u = 0.5 * N_bot_temporary * (h0_small_scale(I,j) ** 2) * kh_small_scale
 
@@ -560,7 +563,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       endif
 
       ! Correction to bottom lee wave stress
-      steepness_u = abs(N_bot(I,j) * h0_small_scale(I,j) / u(I,j,k_u-1))
+      steepness_u = abs(N_bot_u(I,j) * h0_small_scale(I,j) / u(I,j,k_u-1))
       steepness_c = 0.75
       if (steepness_u > steepness_c) then  
         lw_stress_u(I,j) = lw_stress_u(I,j) * ((steepness_c/steepness_u) ** 2)
@@ -587,7 +590,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u 
         lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k)) ! in m2 s-3 (=w kg-1). 
         lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) ! in m3 s-3. 
-        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k) 
+        !u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k) 
 
       enddo
 
@@ -687,7 +690,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
      
     do i=is-1,ie; if (do_i(i)) then
         
-      N_bot_temporary = N_bot(i,J)   ! temporary bottom stratification, in s-1.
+      N_bot_temporary = N_bot_v(i,J)   ! temporary bottom stratification, in s-1.
 
       lw_drag_coeff_v = 0.5 * N_bot_temporary * (h0_small_scale(i,J) ** 2) * kh_small_scale
 
@@ -711,7 +714,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       endif
 
       ! Correction to bottom lee wave stress
-      steepness_v = abs(N_bot(i,J) * h0_small_scale(i,J) / v(i,J,k_v-1))
+      steepness_v = abs(N_bot_v(i,J) * h0_small_scale(i,J) / v(i,J,k_v-1))
       steepness_c = 0.75
       if (steepness_v > steepness_c) then  
         lw_stress_v(i,J) = lw_stress_v(i,J) * ((steepness_c/steepness_v) ** 2)
@@ -736,7 +739,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
         lw_epsilon_v(i,J,k) = abs(v(i,J,k) * lw_body_force_v(i,J,k))
         lw_epsilon_lay_v(i,J,k) = lw_epsilon_v(i,J,k) * CS%h_v(i,J,k)
-        v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
+        !v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
       enddo
         
