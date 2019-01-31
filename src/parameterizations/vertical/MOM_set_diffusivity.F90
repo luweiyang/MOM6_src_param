@@ -766,8 +766,8 @@ subroutine set_diffusivity(u, v, h, u_h, v_h, tv, fluxes, optics, visc, dt, &
  
     do k=2,nz ; do i=is,ie
 
-      !TKE_Yang(i,j,k) = 0.0
-      TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
+      TKE_Yang(i,j,k) = 0.0
+      !TKE_Yang(i,j,k) = visc%lw_epsilon_lay(i,j,k)
       
       Kd_add  = 0.2 * TKE_to_Kd(i,k) * TKE_Yang(i,j,k) 
 

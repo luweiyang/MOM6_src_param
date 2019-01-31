@@ -590,7 +590,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_body_force_u(I,j,k) = lw_stress_u(I,j) / Rho0 / decay_depth * vert_structure_u 
         lw_epsilon_u(I,j,k) = abs(u(I,j,k) * lw_body_force_u(I,j,k)) ! in m2 s-3 (=w kg-1). 
         lw_epsilon_lay_u(I,j,k) = lw_epsilon_u(I,j,k) * CS%h_u(I,j,k) ! in m3 s-3. 
-        !u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k) 
+        u(I,j,k) = u(I,j,k) + dt * lw_body_force_u(I,j,k) 
 
       enddo
 
@@ -739,7 +739,7 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
         lw_body_force_v(i,J,k) = lw_stress_v(i,J) / Rho0 / decay_depth * vert_structure_v
         lw_epsilon_v(i,J,k) = abs(v(i,J,k) * lw_body_force_v(i,J,k))
         lw_epsilon_lay_v(i,J,k) = lw_epsilon_v(i,J,k) * CS%h_v(i,J,k)
-        !v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
+        v(i,J,k) = v(i,J,k) + dt * lw_body_force_v(i,J,k) 
 
       enddo
         
