@@ -520,13 +520,13 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
   
   ! N2_bot(i,j). Modified based on 'call find_N2_bottom(h, tv, T_f, S_f, itide%h2, fluxes, G, GV, N2_bot)' 
   call find_N2_bottom(h, tv, tv%T, tv%S, h0_small_scale, fluxes, G, GV, N2_bot)
-  N_bot = sqrt(N2_bot)
+  !N_bot = sqrt(N2_bot)
 
   ! Interpolate to get N_bot(I,j) and N_bot(i,J) from N_bot(i,j)
   do j=G%jsc,G%jec 
     do i=is,ie;  
-      N_bot_u(I,j) = 0.5 * (N_bot(i,j) + N_bot(i+1,j))     
-      N_bot_v(i,J) = 0.5 * (N_bot(i,j) + N_bot(i,j+1)) 
+      N_bot_u(I,j) = 0.5 * (sqrt(N_bot(i,j)) + sqrt(N_bot(i+1,j)))     
+      N_bot_v(i,J) = 0.5 * (sqrt(N_bot(i,j)) + sqrt(N_bot(i,j+1))) 
     enddo
   enddo
   
@@ -832,8 +832,8 @@ subroutine vertvisc(u, v, h, fluxes, visc, dt, OBC, ADp, CDp, G, GV, CS, &
       u_tracer_bot(i,j) = u_tracer(i,j,k_h-1)  
       v_tracer_bot(i,j) = v_tracer(i,j,k_h-1) 
       U_tracer_mag(i,j) = sqrt(u_tracer_bot(i,j)**2 + v_tracer_bot(i,j)**2)
-      steepness(i,j) = N_bot(i,j) * h0_small_scale(i,j) / U_tracer_mag(i,j)
-      lw_drag_coeff(i,j) = 0.5 * N_bot(i,j) *  (h0_small_scale(i,j) ** 2) * kh_small_scale 
+      steepness(i,j) = sqrt(N2_bot(i,j)) * h0_small_scale(i,j) / U_tracer_mag(i,j)
+      lw_drag_coeff(i,j) = 0.5 * sqrt(N2_bot(i,j)) *  (h0_small_scale(i,j) ** 2) * kh_small_scale 
     enddo
   enddo
 !=============================================
